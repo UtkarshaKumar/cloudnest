@@ -4,6 +4,8 @@ CloudNest is a cute, calm macOS app for recovering deleted iCloud Drive files wh
 
 It is built with Tauri 2, a vanilla Vite frontend, and a Rust-native restore core.
 
+![CloudNest welcome screen](docs/assets/cloudnest-welcome.png)
+
 ## What It Does
 
 - Opens Chrome for Apple-managed iCloud sign-in.
@@ -36,6 +38,10 @@ cargo test
 ```
 
 The Rust test suite covers restore batching, checkpoint integrity, auth URL parsing, cookie extraction, cancellation, and resume behavior.
+
+## Visual QA
+
+The welcome screen above was captured from the production Vite build with local Chrome headless.
 
 ## Privacy
 

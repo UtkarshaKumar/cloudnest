@@ -1,8 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import cloudNestIcon from "./assets/icons/cloud-nest.svg";
+import cloudSyncIcon from "./assets/icons/cloud-sync.svg";
+import folderHeartIcon from "./assets/icons/folder-heart.svg";
+import lockSoftIcon from "./assets/icons/lock-soft.svg";
+import sparkCheckIcon from "./assets/icons/spark-check.svg";
 
 const app = document.getElementById("app");
+const isTauri = "__TAURI_INTERNALS__" in window;
+const iconPaths = {
+  "cloud-nest": cloudNestIcon,
+  "cloud-sync": cloudSyncIcon,
+  "folder-heart": folderHeartIcon,
+  "lock-soft": lockSoftIcon,
+  "spark-check": sparkCheckIcon,
+};
 
 const state = {
   phase: "Welcome",
@@ -42,11 +55,11 @@ init().catch((error) => {
 });
 
 async function init() {
-  await listen("restore-event", (event) => {
+  await safeListen("restore-event", (event) => {
     handleRestoreEvent(event.payload);
   });
 
-  const snapshot = await invoke("get_restore_state");
+  const snapshot = await safeInvoke("get_restore_state");
   mergeSnapshot(snapshot);
   render();
 }
@@ -354,7 +367,7 @@ function heroIcon(name) {
 }
 
 function icon(name, className = "") {
-  return `<img class="${className}" src="./assets/icons/${name}.svg" alt="" aria-hidden="true" />`;
+  return `<img class="${className}" src="${iconPaths[name]}" alt="" aria-hidden="true" />`;
 }
 
 function bindActions() {
@@ -377,7 +390,7 @@ async function dispatch(action) {
       return;
     }
     if (action === "chrome-download") {
-      await openUrl("https://www.google.com/chrome/");
+      await safeOpenUrl("https://www.google.com/chrome/");
       return;
     }
     if (action === "reset") {
@@ -405,7 +418,7 @@ async function dispatch(action) {
     const command = commandByAction[action];
     if (!command) return;
 
-    const snapshot = await invoke(command);
+    const snapshot = await safeInvoke(command);
     mergeSnapshot(snapshot);
   } catch (error) {
     state.phase = "Error";
@@ -428,6 +441,36 @@ function readableError(error) {
   if (typeof error === "string") return error;
   if (error?.message) return error.message;
   return "Something went wrong. Progress is saved when possible.";
+}
+
+async function safeListen(eventName, handler) {
+  if (!isTauri) return () => {};
+  return listen(eventName, handler);
+}
+
+async function safeInvoke(command) {
+  if (isTauri) return invoke(command);
+
+  if (command === "get_restore_state") {
+    return {
+      phase: "Welcome",
+      deleted_count: 0,
+      stats: { total: 0, restored: 0, failed: 0, failed_ids: [] },
+      message: "Ready to recover deleted iCloud Drive files.",
+      can_resume: false,
+    };
+  }
+
+  throw new Error("Desktop-only action. Open CloudNest as a macOS app to continue.");
+}
+
+async function safeOpenUrl(url) {
+  if (isTauri) {
+    await openUrl(url);
+    return;
+  }
+
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function formatNumber(value) {
