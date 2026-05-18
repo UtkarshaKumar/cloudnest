@@ -1,21 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import cloudNestIcon from "./assets/icons/cloud-nest.svg";
-import cloudSyncIcon from "./assets/icons/cloud-sync.svg";
-import folderHeartIcon from "./assets/icons/folder-heart.svg";
-import lockSoftIcon from "./assets/icons/lock-soft.svg";
-import sparkCheckIcon from "./assets/icons/spark-check.svg";
+import "@fontsource/instrument-sans/400.css";
+import "@fontsource/instrument-sans/500.css";
+import "@fontsource/instrument-sans/600.css";
+import "@fontsource/instrument-sans/700.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "material-symbols/rounded.css";
 
 const app = document.getElementById("app");
 const isTauri = "__TAURI_INTERNALS__" in window;
-const iconPaths = {
-  "cloud-nest": cloudNestIcon,
-  "cloud-sync": cloudSyncIcon,
-  "folder-heart": folderHeartIcon,
-  "lock-soft": lockSoftIcon,
-  "spark-check": sparkCheckIcon,
-};
 
 const state = {
   phase: "Welcome",
@@ -154,7 +148,7 @@ function render() {
     <section class="shell">
       <aside class="sidebar" aria-label="Recovery steps">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">${icon("cloud-nest", "brand-icon")}</div>
+          <div class="brand-mark" aria-hidden="true">${icon("cloud_sync", "brand-icon")}</div>
           <div>
             <p class="eyebrow">CloudNest</p>
             <h1>Soft iCloud recovery</h1>
@@ -192,7 +186,7 @@ function renderPanel() {
 function welcomePanel() {
   return `
     <div class="hero-card">
-      ${heroIcon("folder-heart")}
+      ${heroIcon("folder_open")}
       <p class="eyebrow">Calm file recovery</p>
       <h2>Recover deleted iCloud Drive files</h2>
       <p class="lede">CloudNest gently finds recently deleted items and brings them back home safely in batches.</p>
@@ -210,7 +204,7 @@ function welcomePanel() {
 function signInPanel() {
   return `
     <div class="hero-card">
-      ${heroIcon("lock-soft")}
+      ${heroIcon("lock")}
       <p class="eyebrow">Step 1</p>
       <h2>Sign in with Apple</h2>
       <p class="lede">A Chrome window will open for iCloud. Apple handles your password, Keychain, and two-factor code. This app only watches for the restore session needed to continue.</p>
@@ -227,7 +221,7 @@ function scanPanel() {
   const scanning = state.phase === "Scanning" || state.busy;
   return `
     <div class="hero-card">
-      ${heroIcon("cloud-sync")}
+      ${heroIcon("cloud_sync")}
       <p class="eyebrow">Step 2</p>
       <h2>Finding deleted items</h2>
       <p class="lede">Scanning recently deleted iCloud Drive files and folders. Large accounts can take a few minutes.</p>
@@ -248,7 +242,7 @@ function scanPanel() {
 function reviewPanel() {
   return `
     <div class="hero-card">
-      ${heroIcon("folder-heart")}
+      ${heroIcon("restore_from_trash")}
       <p class="eyebrow">Step 3</p>
       <h2>${formatNumber(state.deletedCount)} items ready to restore</h2>
       <p class="lede">They will be restored to iCloud Drive using Apple's own recovery endpoint.</p>
@@ -270,7 +264,7 @@ function restorePanel() {
 
   return `
     <div class="hero-card wide">
-      ${heroIcon("cloud-sync")}
+      ${heroIcon("cloud_sync")}
       <p class="eyebrow">Step 4</p>
       <h2>${paused ? "Restore paused" : "Restoring your files"}</h2>
       ${statusMessage()}
@@ -300,7 +294,7 @@ function donePanel() {
   const partial = state.stats.failed > 0;
   return `
     <div class="hero-card">
-      ${heroIcon(partial ? "folder-heart" : "spark-check")}
+      ${heroIcon(partial ? "restore_from_trash" : "check_circle")}
       <p class="eyebrow">${partial ? "Partial success" : "Complete"}</p>
       <h2>${partial ? "Mostly recovered" : "Recovery complete"}</h2>
       <p class="lede">${escapeHtml(state.message)}</p>
@@ -320,7 +314,7 @@ function donePanel() {
 function errorPanel() {
   return `
     <div class="hero-card">
-      ${heroIcon("folder-heart")}
+      ${heroIcon("error")}
       <p class="eyebrow danger">Needs attention</p>
       <h2>Recovery needs your help</h2>
       ${statusMessage("error")}
@@ -367,7 +361,7 @@ function heroIcon(name) {
 }
 
 function icon(name, className = "") {
-  return `<img class="${className}" src="${iconPaths[name]}" alt="" aria-hidden="true" />`;
+  return `<span class="material-symbols-rounded ${className}" aria-hidden="true">${name}</span>`;
 }
 
 function bindActions() {

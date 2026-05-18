@@ -1,5 +1,6 @@
 :root {
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
   --color-canvas: #f7f5f1;
   --color-surface: #fffdf9;
   --color-surface-muted: #f0ede7;
@@ -87,8 +88,8 @@ button {
 }
 
 .brand-icon {
-  width: 34px;
-  height: 34px;
+  font-size: 28px;
+  line-height: 1;
   filter: drop-shadow(0 6px 10px rgba(47, 128, 237, 0.18));
 }
 
@@ -187,8 +188,27 @@ button {
 }
 
 .hero-icon img {
-  width: 46px;
-  height: 46px;
+  display: none;
+}
+
+.hero-icon .material-symbols-rounded {
+  font-size: 44px;
+  font-variation-settings:
+    "FILL" 1,
+    "wght" 500,
+    "GRAD" 0,
+    "opsz" 48;
+}
+
+.material-symbols-rounded {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 500,
+    "GRAD" 0,
+    "opsz" 48;
 }
 
 .hero-card.wide {
@@ -356,7 +376,7 @@ button {
   border-radius: 14px;
   color: var(--color-text-muted);
   background: #fbf8f3;
-  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.55;
   list-style: none;

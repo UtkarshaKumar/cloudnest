@@ -140,8 +140,8 @@ Messages use plain language and a clear next step.
 - Soft blue/teal action color.
 - Restrained red for blocking failures only.
 - Rounded cards, spacious rhythm, no dense tables on the happy path.
-- Font: Google `Inter` or `Instrument Sans`, bundled locally before release.
-- Icons: Google Material Symbols as local SVGs before release.
+- Font: Google `Instrument Sans`, bundled locally through the app build.
+- Icons: Google `Material Symbols Rounded`, bundled locally through the app build.
 
 ## Privacy Copy
 

@@ -1,6 +1,6 @@
 [package]
 name = "icloud_recovery_desktop"
-version = "0.1.1"
+version = "0.1.2"
 description = "Cute, calm macOS app for recovering deleted iCloud Drive files"
 authors = ["Utkarsh Kumar"]
 edition = "2021"

@@ -6,6 +6,8 @@ It is built with Tauri 2, a vanilla Vite frontend, and a Rust-native restore cor
 
 ![CloudNest welcome screen](docs/assets/cloudnest-welcome.png)
 
+The UI uses bundled Google font files: `Instrument Sans` for the product interface and `IBM Plex Mono` for technical logs. Icons use Google's `Material Symbols Rounded` font locally, so they render inside the packaged app without loading assets from a CDN.
+
 ## What It Does
 
 - Opens Chrome for Apple-managed iCloud sign-in.

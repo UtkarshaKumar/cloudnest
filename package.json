@@ -1,6 +1,6 @@
 {
   "name": "cloudnest",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Cute, calm macOS app for recovering deleted iCloud Drive files.",
   "type": "module",
   "scripts": {
@@ -12,8 +12,11 @@
   "author": "Utkarsh Kumar",
   "license": "MIT",
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/instrument-sans": "^5.2.8",
     "@tauri-apps/api": "^2.11.0",
-    "@tauri-apps/plugin-opener": "^2.5.4"
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "material-symbols": "^0.44.8"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.1",

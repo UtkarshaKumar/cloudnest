@@ -1949,7 +1949,7 @@ dependencies = [
 
 [[package]]
 name = "icloud_recovery_desktop"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "futures-util",
