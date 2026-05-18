@@ -7,6 +7,7 @@ import "@fontsource/instrument-sans/600.css";
 import "@fontsource/instrument-sans/700.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "material-symbols/rounded.css";
+import { formatNumber, messageText, normalizeMessage, t } from "./i18n/index.js";
 
 const app = document.getElementById("app");
 const isTauri = "__TAURI_INTERNALS__" in window;
@@ -15,19 +16,19 @@ const state = {
   phase: "Welcome",
   deletedCount: 0,
   stats: { total: 0, restored: 0, failed: 0, failed_ids: [] },
-  message: "Ready to recover deleted iCloud Drive files.",
+  message: { id: "status.ready", params: {} },
   busy: false,
   detailsOpen: false,
   log: [],
 };
 
 const steps = [
-  ["Welcome", "Start"],
-  ["SigningIn", "Sign In"],
-  ["Scanning", "Scan"],
-  ["ReadyToRestore", "Review"],
-  ["Restoring", "Restore"],
-  ["Complete", "Done"],
+  ["Welcome", "step.start"],
+  ["SigningIn", "step.signIn"],
+  ["Scanning", "step.scan"],
+  ["ReadyToRestore", "step.review"],
+  ["Restoring", "step.restore"],
+  ["Complete", "step.done"],
 ];
 
 const phaseToStepIndex = {
@@ -64,45 +65,52 @@ function handleRestoreEvent(event) {
   switch (event.type) {
     case "authStarted":
       state.phase = "SigningIn";
-      state.message = "Waiting for iCloud sign-in...";
+      state.message = { id: "status.signingIn", params: {} };
       break;
     case "authenticated":
       state.phase = "ReadyToScan";
-      state.message = "Sign-in detected. Ready to scan deleted items.";
+      state.message = { id: "status.authenticated", params: {} };
       break;
     case "scanProgress":
       state.phase = "Scanning";
       state.deletedCount = event.total;
-      state.message = `Page ${event.page} scanned. ${event.total} items found.`;
-      appendLog(`Scan page ${event.page}: ${event.pageCount} items, ${event.total} total.`);
+      state.message = { id: "status.scanProgress", params: eventParams(event) };
+      appendLog("log.scanProgress", eventParams(event));
       break;
     case "scanComplete":
       state.phase = "ReadyToRestore";
       state.deletedCount = event.total;
-      state.message = `${event.total} deleted iCloud Drive items are ready to restore.`;
-      appendLog(`Scan complete: ${event.total} deleted items found.`);
+      state.message = { id: "status.scanComplete", params: eventParams(event) };
+      appendLog("log.scanComplete", eventParams(event));
       break;
     case "restoreStarted":
       state.phase = "Restoring";
       state.stats.total = event.total;
-      state.message = "Restoring your files...";
-      appendLog(`Restore started for ${event.total} items.`);
+      state.message = { id: "status.restoring", params: {} };
+      appendLog("log.restoreStarted", eventParams(event));
       break;
     case "restoreProgress":
       state.phase = "Restoring";
       state.stats.total = event.total;
       state.stats.restored = event.restored;
       state.stats.failed = event.failed;
-      state.message = event.message;
-      appendLog(`${event.message} Restored ${event.restored}, failed ${event.failed}.`);
+      state.message = normalizeMessage(event.message);
+      appendLog("log.restoreProgress", {
+        ...eventParams(event),
+        message: messageText(event.message),
+      });
       break;
     case "retry":
-      state.message = event.message;
-      appendLog(`Batch ${event.batchNumber} retry ${event.attempt}: ${event.message}`);
+      state.message = normalizeMessage(event.message);
+      appendLog("log.retry", {
+        ...eventParams(event),
+        batch: event.batchNumber,
+        message: messageText(event.message),
+      });
       break;
     case "paused":
       state.phase = "Paused";
-      state.message = event.message;
+      state.message = normalizeMessage(event.message);
       appendLog(event.message);
       break;
     case "complete":
@@ -110,15 +118,15 @@ function handleRestoreEvent(event) {
       state.stats = normalizeStats(event.stats);
       state.message =
         state.stats.failed > 0
-          ? `Restored ${state.stats.restored} items. ${state.stats.failed} items need another try.`
-          : `Recovery complete. ${state.stats.restored} items were restored to iCloud Drive.`;
-      appendLog("Restore complete.");
+          ? { id: "status.partialComplete", params: statsParams(state.stats) }
+          : { id: "status.complete", params: statsParams(state.stats) };
+      appendLog("log.complete");
       state.busy = false;
       break;
     case "error":
       state.phase = "Error";
-      state.message = event.message;
-      appendLog(`Error: ${event.message}`);
+      state.message = normalizeMessage(event.message);
+      appendLog("log.error", { message: messageText(event.message) });
       state.busy = false;
       break;
   }
@@ -130,7 +138,7 @@ function mergeSnapshot(snapshot) {
   state.phase = snapshot.phase;
   state.deletedCount = snapshot.deleted_count ?? snapshot.deletedCount ?? 0;
   state.stats = normalizeStats(snapshot.stats);
-  state.message = snapshot.message || state.message;
+  state.message = normalizeMessage(snapshot.message || state.message);
 }
 
 function normalizeStats(stats = {}) {
@@ -146,23 +154,23 @@ function render() {
   const currentStepIndex = phaseToStepIndex[state.phase] ?? 0;
   app.innerHTML = `
     <section class="shell">
-      <aside class="sidebar" aria-label="Recovery steps">
+      <aside class="sidebar" aria-label="${t("app.recoverySteps")}">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">${icon("cloud_sync", "brand-icon")}</div>
           <div>
-            <p class="eyebrow">CloudNest</p>
-            <h1>Soft iCloud recovery</h1>
+            <p class="eyebrow">${t("app.productName")}</p>
+            <h1>${t("app.title")}</h1>
           </div>
         </div>
         <ol class="stepper">
           ${steps
-            .map(([, label], index) => {
+            .map(([, labelId], index) => {
               const status = index < currentStepIndex ? "done" : index === currentStepIndex ? "active" : "";
-              return `<li class="${status}"><span>${index + 1}</span>${label}</li>`;
+              return `<li class="${status}"><span>${index + 1}</span>${t(labelId)}</li>`;
             })
             .join("")}
         </ol>
-        <p class="privacy-note">Your Apple ID password and two-factor code stay inside Apple's iCloud sign-in page. Progress is saved locally on this Mac.</p>
+        <p class="privacy-note">${t("app.privacyNote")}</p>
       </aside>
       <section class="panel">
         ${renderPanel()}
@@ -188,15 +196,15 @@ function welcomePanel() {
   return `
     <div class="hero-card">
       ${heroIcon("folder_open")}
-      <p class="eyebrow">Calm file recovery</p>
-      <h2>Recover deleted iCloud Drive files</h2>
-      <p class="lede">CloudNest gently finds recently deleted items and brings them back home safely in batches.</p>
+      <p class="eyebrow">${t("welcome.eyebrow")}</p>
+      <h2>${t("welcome.title")}</h2>
+      <p class="lede">${t("welcome.lede")}</p>
       <div class="actions">
-        ${button("Start Recovery", "start-auth", "primary")}
+        ${button(t("welcome.start"), "start-auth", "primary")}
       </div>
-      <button class="link-button" data-action="privacy">How this keeps your data private</button>
+      <button class="link-button" data-action="privacy">${t("welcome.privacyAction")}</button>
       <div class="callout hidden" id="privacy-copy">
-        Your Apple ID password and two-factor code stay inside Apple's iCloud sign-in page. Session credentials are kept in memory only and are not written to disk.
+        ${t("welcome.privacyCopy")}
       </div>
     </div>
   `;
@@ -206,13 +214,13 @@ function signInPanel() {
   return `
     <div class="hero-card">
       ${heroIcon("lock")}
-      <p class="eyebrow">Step 1</p>
-      <h2>Sign in with Apple</h2>
-      <p class="lede">A Chrome window will open for iCloud. Apple handles your password, Keychain, and two-factor code. This app only watches for the restore session needed to continue.</p>
+      <p class="eyebrow">${t("signIn.eyebrow")}</p>
+      <h2>${t("signIn.title")}</h2>
+      <p class="lede">${t("signIn.lede")}</p>
       ${statusMessage()}
       <div class="actions">
-        ${button(state.busy ? "Waiting for Sign In" : "Open iCloud Sign In", "start-auth", "primary", state.busy)}
-        ${button("Cancel", "reset", "secondary")}
+        ${button(state.busy ? t("signIn.waiting") : t("signIn.open"), "start-auth", "primary", state.busy)}
+        ${button(t("common.cancel"), "reset", "secondary")}
       </div>
     </div>
   `;
@@ -223,17 +231,17 @@ function scanPanel() {
   return `
     <div class="hero-card">
       ${heroIcon("cloud_sync")}
-      <p class="eyebrow">Step 2</p>
-      <h2>Finding deleted items</h2>
-      <p class="lede">Scanning recently deleted iCloud Drive files and folders. Large accounts can take a few minutes.</p>
+      <p class="eyebrow">${t("scan.eyebrow")}</p>
+      <h2>${t("scan.title")}</h2>
+      <p class="lede">${t("scan.lede")}</p>
       ${statusMessage()}
       <div class="metric-row">
-        ${metric("Items found", formatNumber(state.deletedCount))}
-        ${metric("Mode", "Safe batch scan")}
+        ${metric(t("scan.itemsFound"), formatNumber(state.deletedCount))}
+        ${metric(t("scan.mode"), t("scan.modeValue"))}
       </div>
       <div class="actions">
-        ${button(scanning ? "Scanning" : "Scan Deleted Items", "scan", "primary", scanning)}
-        ${button("Cancel", "reset", "secondary")}
+        ${button(scanning ? t("scan.scanning") : t("scan.action"), "scan", "primary", scanning)}
+        ${button(t("common.cancel"), "reset", "secondary")}
       </div>
       ${detailsLog()}
     </div>
@@ -244,14 +252,14 @@ function reviewPanel() {
   return `
     <div class="hero-card">
       ${heroIcon("restore_from_trash")}
-      <p class="eyebrow">Step 3</p>
-      <h2>${formatNumber(state.deletedCount)} items ready to restore</h2>
-      <p class="lede">They will be restored to iCloud Drive using Apple's own recovery endpoint.</p>
+      <p class="eyebrow">${t("review.eyebrow")}</p>
+      <h2>${t("review.title", { count: formatNumber(state.deletedCount) })}</h2>
+      <p class="lede">${t("review.lede")}</p>
       ${statusMessage()}
       <div class="actions">
-        ${button(`Restore ${formatNumber(state.deletedCount)} Items`, "restore", "primary", state.deletedCount === 0)}
-        ${button("Back", "scan", "secondary")}
-        ${button("Cancel", "reset", "secondary")}
+        ${button(t("review.restoreAction", { count: formatNumber(state.deletedCount) }), "restore", "primary", state.deletedCount === 0)}
+        ${button(t("common.back"), "scan", "secondary")}
+        ${button(t("common.cancel"), "reset", "secondary")}
       </div>
     </div>
   `;
@@ -266,25 +274,25 @@ function restorePanel() {
   return `
     <div class="hero-card wide">
       ${heroIcon("cloud_sync")}
-      <p class="eyebrow">Step 4</p>
-      <h2>${paused ? "Restore paused" : "Restoring your files"}</h2>
+      <p class="eyebrow">${t("restore.eyebrow")}</p>
+      <h2>${paused ? t("restore.titlePaused") : t("restore.titleActive")}</h2>
       ${statusMessage()}
-      <div class="progress-wrap" aria-label="Restore progress">
-        <div class="progress-label"><span>${percent}% complete</span><span>${formatNumber(completed)} of ${formatNumber(total)}</span></div>
+      <div class="progress-wrap" aria-label="${t("restore.progressLabel")}">
+        <div class="progress-label"><span>${t("restore.percentComplete", { percent })}</span><span>${t("restore.countProgress", { completed: formatNumber(completed), total: formatNumber(total) })}</span></div>
         <div class="progress-track"><div class="progress-fill" data-progress="${percent}"></div></div>
       </div>
       <div class="metric-row">
-        ${metric("Restored", formatNumber(state.stats.restored), "success")}
-        ${metric("Need another try", formatNumber(state.stats.failed), state.stats.failed > 0 ? "warning" : "")}
-        ${metric("Total", formatNumber(total))}
+        ${metric(t("restore.restored"), formatNumber(state.stats.restored), "success")}
+        ${metric(t("restore.failed"), formatNumber(state.stats.failed), state.stats.failed > 0 ? "warning" : "")}
+        ${metric(t("restore.total"), formatNumber(total))}
       </div>
       <div class="actions">
         ${
           paused
-            ? button("Resume Restore", "restore", "primary")
-            : button("Pause After Current Batch", "pause", "primary", state.busy && false)
+            ? button(t("restore.resume"), "restore", "primary")
+            : button(t("restore.pause"), "pause", "primary", state.busy && false)
         }
-        ${button("Cancel and Save Progress", "pause", "secondary")}
+        ${button(t("restore.cancelAndSave"), "pause", "secondary")}
       </div>
       ${detailsLog()}
     </div>
@@ -296,16 +304,16 @@ function donePanel() {
   return `
     <div class="hero-card">
       ${heroIcon(partial ? "restore_from_trash" : "check_circle")}
-      <p class="eyebrow">${partial ? "Partial success" : "Complete"}</p>
-      <h2>${partial ? "Mostly recovered" : "Recovery complete"}</h2>
-      <p class="lede">${escapeHtml(state.message)}</p>
+      <p class="eyebrow">${partial ? t("done.partialEyebrow") : t("done.completeEyebrow")}</p>
+      <h2>${partial ? t("done.partialTitle") : t("done.completeTitle")}</h2>
+      <p class="lede">${escapeHtml(messageText(state.message))}</p>
       <div class="metric-row">
-        ${metric("Restored", formatNumber(state.stats.restored), "success")}
-        ${metric("Need another try", formatNumber(state.stats.failed), partial ? "warning" : "")}
+        ${metric(t("restore.restored"), formatNumber(state.stats.restored), "success")}
+        ${metric(t("restore.failed"), formatNumber(state.stats.failed), partial ? "warning" : "")}
       </div>
       <div class="actions">
-        ${partial ? button("Retry Failed Items", "retry", "primary") : ""}
-        ${button("Done", "reset", partial ? "secondary" : "primary")}
+        ${partial ? button(t("done.retryFailed"), "retry", "primary") : ""}
+        ${button(t("done.done"), "reset", partial ? "secondary" : "primary")}
       </div>
       ${detailsLog()}
     </div>
@@ -316,12 +324,12 @@ function errorPanel() {
   return `
     <div class="hero-card">
       ${heroIcon("error")}
-      <p class="eyebrow danger">Needs attention</p>
-      <h2>Recovery needs your help</h2>
+      <p class="eyebrow danger">${t("error.eyebrow")}</p>
+      <h2>${t("error.title")}</h2>
       ${statusMessage("error")}
       <div class="actions">
-        ${button("Try Again", "start-auth", "primary")}
-        ${button("Open Chrome Download", "chrome-download", "secondary")}
+        ${button(t("error.tryAgain"), "start-auth", "primary")}
+        ${button(t("error.chromeDownload"), "chrome-download", "secondary")}
       </div>
       ${detailsLog()}
     </div>
@@ -329,7 +337,7 @@ function errorPanel() {
 }
 
 function statusMessage(kind = "info") {
-  return `<div class="status ${kind}">${escapeHtml(state.message)}</div>`;
+  return `<div class="status ${kind}">${escapeHtml(messageText(state.message))}</div>`;
 }
 
 function metric(label, value, tone = "") {
@@ -344,10 +352,10 @@ function metric(label, value, tone = "") {
 function detailsLog() {
   const body = state.log.length
     ? state.log.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")
-    : "<li>No technical details yet.</li>";
+    : `<li>${t("details.empty")}</li>`;
   return `
     <div class="details">
-      <button class="details-toggle" data-action="toggle-details">${state.detailsOpen ? "Hide" : "Show"} Details</button>
+      <button class="details-toggle" data-action="toggle-details">${state.detailsOpen ? t("details.hide") : t("details.show")}</button>
       <ul class="log ${state.detailsOpen ? "" : "hidden"}">${body}</ul>
     </div>
   `;
@@ -421,7 +429,7 @@ async function dispatch(action) {
   } catch (error) {
     state.phase = "Error";
     state.message = readableError(error);
-    appendLog(`Error: ${state.message}`);
+    appendLog("log.error", { message: messageText(state.message) });
   } finally {
     if (!["SigningIn", "Scanning", "Restoring"].includes(state.phase)) {
       state.busy = false;
@@ -430,15 +438,16 @@ async function dispatch(action) {
   }
 }
 
-function appendLog(entry) {
-  state.log.push(`${new Date().toLocaleTimeString()} - ${entry}`);
+function appendLog(message, params = {}) {
+  const text = typeof message === "string" ? t(message, params) : messageText(message);
+  state.log.push(`${new Date().toLocaleTimeString()} - ${text}`);
   if (state.log.length > 200) state.log.shift();
 }
 
 function readableError(error) {
-  if (typeof error === "string") return error;
-  if (error?.message) return error.message;
-  return "Something went wrong. Progress is saved when possible.";
+  if (typeof error === "string") return normalizeMessage(error);
+  if (error?.message) return normalizeMessage(error.message);
+  return { id: "error.unknown", params: {} };
 }
 
 async function safeListen(eventName, handler) {
@@ -454,7 +463,7 @@ async function safeInvoke(command) {
       phase: "Welcome",
       deleted_count: 0,
       stats: { total: 0, restored: 0, failed: 0, failed_ids: [] },
-      message: "Ready to recover deleted iCloud Drive files.",
+      message: { id: "status.ready", params: {} },
       can_resume: false,
     };
   }
@@ -464,12 +473,12 @@ async function safeInvoke(command) {
       phase: "Welcome",
       deleted_count: 0,
       stats: { total: 0, restored: 0, failed: 0, failed_ids: [] },
-      message: "Ready to recover deleted iCloud Drive files.",
+      message: { id: "status.ready", params: {} },
       can_resume: false,
     };
   }
 
-  throw new Error("Desktop-only action. Open CloudNest as a macOS app to continue.");
+  throw new Error(JSON.stringify({ id: "error.desktopOnly", params: {} }));
 }
 
 function resetLocalState() {
@@ -477,7 +486,7 @@ function resetLocalState() {
     phase: "Welcome",
     deletedCount: 0,
     stats: { total: 0, restored: 0, failed: 0, failed_ids: [] },
-    message: "Ready to recover deleted iCloud Drive files.",
+    message: { id: "status.ready", params: {} },
     busy: false,
     log: [],
   });
@@ -492,10 +501,6 @@ async function safeOpenUrl(url) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-function formatNumber(value) {
-  return new Intl.NumberFormat().format(value || 0);
-}
-
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -503,4 +508,23 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function eventParams(event = {}) {
+  return {
+    page: event.page,
+    pageCount: event.pageCount ?? event.page_count,
+    total: event.total,
+    restored: event.restored,
+    failed: event.failed,
+    attempt: event.attempt,
+  };
+}
+
+function statsParams(stats = {}) {
+  return {
+    total: formatNumber(stats.total),
+    restored: formatNumber(stats.restored),
+    failed: formatNumber(stats.failed),
+  };
 }

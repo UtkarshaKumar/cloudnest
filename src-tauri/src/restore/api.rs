@@ -184,7 +184,7 @@ impl ICloudApiClient {
                 let message = status
                     .status_message
                     .clone()
-                    .unwrap_or_else(|| "iCloud did not restore this batch.".to_string());
+                    .unwrap_or_else(|| "restore_batch_failed".to_string());
                 return Err(RestoreError::Api(message));
             }
         }
@@ -259,7 +259,7 @@ fn headers(credentials: &Credentials) -> Result<HeaderMap, RestoreError> {
     headers.insert(
         COOKIE,
         HeaderValue::from_str(&credentials.cookies)
-            .map_err(|e| RestoreError::Api(format!("Invalid iCloud cookie header: {e}")))?,
+            .map_err(|e| RestoreError::Api(format!("invalid_cookie_header:{e}")))?,
     );
     Ok(headers)
 }

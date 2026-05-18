@@ -45,6 +45,12 @@ The Rust test suite covers restore batching, checkpoint integrity, auth URL pars
 
 The welcome screen above was captured from the production Vite build with local Chrome headless.
 
+## Localization And Store Readiness
+
+CloudNest keeps user-facing copy in `src/i18n/` so language support is present from day 0. New UI, status, log, and error text should use message IDs rather than hardcoded English in Rust or JavaScript.
+
+For signing, privacy, localization, and review requirements, see `docs/APP_STORE_READINESS.md`.
+
 ## Privacy
 
 Your Apple ID password and two-factor code stay inside Apple's iCloud sign-in page. Session credentials are kept in memory only and are not written to disk.

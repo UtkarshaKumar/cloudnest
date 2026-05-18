@@ -1,6 +1,6 @@
 use crate::restore::api::{default_restore_batches, max_retries, ICloudApiClient};
 use crate::restore::checkpoint::{CheckpointStore, RestoreProgress};
-use crate::restore::models::{Credentials, RestoreError, RestoreEvent, RestoreStats};
+use crate::restore::models::{Credentials, RestoreError, RestoreEvent, RestoreStats, UiMessage};
 use std::collections::HashSet;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -79,7 +79,7 @@ impl RestoreSupervisor {
             if cancellation.is_cancelled() {
                 self.store.save_progress(&progress)?;
                 emit(RestoreEvent::Paused {
-                    message: "Restore paused after the current batch. Progress is saved.".to_string(),
+                    message: msg("status.pausedAfterBatch"),
                 });
                 return Err(RestoreError::Cancelled);
             }
@@ -98,11 +98,9 @@ impl RestoreSupervisor {
                             restored: restored_count,
                             failed: failed_count,
                             eta_seconds: estimate_eta_seconds(started, restored_count + failed_count, total),
-                            message: format!(
-                                "Batch {}/{} restored.",
-                                batch_index + 1,
-                                batches.len()
-                            ),
+                            message: msg("status.restoreProgress")
+                                .with_param("batch", batch_index + 1)
+                                .with_param("totalBatches", batches.len()),
                         });
                         break;
                     }
@@ -112,9 +110,7 @@ impl RestoreSupervisor {
                         emit(RestoreEvent::Retry {
                             batch_number: batch_index + 1,
                             attempt: attempt + 1,
-                            message: format!(
-                                "iCloud is taking longer than usual. Retrying this batch automatically. ({error})"
-                            ),
+                            message: msg("status.retry").with_param("details", error),
                         });
                         sleep(delay).await;
                     }
@@ -132,11 +128,9 @@ impl RestoreSupervisor {
                     restored: restored_count,
                     failed: failed_count,
                     eta_seconds: estimate_eta_seconds(started, restored_count + failed_count, total),
-                    message: format!(
-                        "Batch {}/{} needs another try.",
-                        batch_index + 1,
-                        batches.len()
-                    ),
+                    message: msg("status.restoreBatchNeedsRetry")
+                        .with_param("batch", batch_index + 1)
+                        .with_param("totalBatches", batches.len()),
                 });
             }
         }
@@ -152,6 +146,10 @@ impl RestoreSupervisor {
         });
         Ok(stats)
     }
+}
+
+fn msg(id: &str) -> UiMessage {
+    UiMessage::new(id)
 }
 
 pub fn remaining_item_ids(item_ids: &[String], progress: &RestoreProgress) -> Vec<String> {

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -43,10 +44,31 @@ pub struct RestoreStats {
     pub failed_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UiMessage {
+    pub id: String,
+    #[serde(default)]
+    pub params: BTreeMap<String, String>,
+}
+
+impl UiMessage {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            params: BTreeMap::new(),
+        }
+    }
+
+    pub fn with_param(mut self, key: impl Into<String>, value: impl ToString) -> Self {
+        self.params.insert(key.into(), value.to_string());
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum RestoreEvent {
-    Status { message: String },
+    Status { message: UiMessage },
     AuthStarted,
     Authenticated,
     ScanProgress { page: u64, page_count: usize, total: usize },
@@ -57,12 +79,12 @@ pub enum RestoreEvent {
         restored: usize,
         failed: usize,
         eta_seconds: Option<u64>,
-        message: String,
+        message: UiMessage,
     },
-    Retry { batch_number: usize, attempt: usize, message: String },
-    Paused { message: String },
+    Retry { batch_number: usize, attempt: usize, message: UiMessage },
+    Paused { message: UiMessage },
     Complete { stats: RestoreStats },
-    Error { message: String, recoverable: bool },
+    Error { message: UiMessage, recoverable: bool },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -83,36 +105,55 @@ pub struct UiSnapshot {
     pub phase: AppPhase,
     pub deleted_count: usize,
     pub stats: RestoreStats,
-    pub message: String,
+    pub message: UiMessage,
     pub can_resume: bool,
 }
 
 #[derive(Debug, Error)]
 pub enum RestoreError {
-    #[error("Chrome is needed for secure Apple sign-in. Install Chrome, then try again.")]
+    #[error("error.chromeMissing")]
     ChromeMissing,
-    #[error("Chrome did not open. Close any stuck Chrome windows, then try again.")]
+    #[error("error.chromeLaunchFailed")]
     ChromeLaunchFailed,
-    #[error("We could not connect to Chrome for sign-in.")]
+    #[error("error.chromeConnectionFailed")]
     ChromeConnectionFailed,
-    #[error("We could not detect a completed iCloud sign-in.")]
+    #[error("error.loginTimeout")]
     LoginTimeout,
-    #[error("iCloud needs you to sign in again.")]
+    #[error("error.authExpired")]
     AuthExpired,
-    #[error("Saved progress could not be read: {0}")]
+    #[error("error.progressCorrupt")]
     ProgressCorrupt(String),
-    #[error("iCloud request failed: {0}")]
+    #[error("error.api")]
     Api(String),
-    #[error("Network request failed: {0}")]
+    #[error("error.network")]
     Network(String),
-    #[error("File operation failed: {0}")]
+    #[error("error.file")]
     File(String),
-    #[error("No active iCloud session. Sign in again to continue.")]
+    #[error("error.missingCredentials")]
     MissingCredentials,
-    #[error("No deleted items have been scanned yet.")]
+    #[error("error.missingScan")]
     MissingScan,
-    #[error("Restore was paused and progress was saved.")]
+    #[error("error.cancelled")]
     Cancelled,
+}
+
+impl RestoreError {
+    pub fn message(&self) -> UiMessage {
+        match self {
+            Self::ChromeMissing => UiMessage::new("error.chromeMissing"),
+            Self::ChromeLaunchFailed => UiMessage::new("error.chromeLaunchFailed"),
+            Self::ChromeConnectionFailed => UiMessage::new("error.chromeConnectionFailed"),
+            Self::LoginTimeout => UiMessage::new("error.loginTimeout"),
+            Self::AuthExpired => UiMessage::new("error.authExpired"),
+            Self::ProgressCorrupt(details) => UiMessage::new("error.progressCorrupt").with_param("details", details),
+            Self::Api(details) => UiMessage::new("error.api").with_param("details", details),
+            Self::Network(details) => UiMessage::new("error.network").with_param("details", details),
+            Self::File(details) => UiMessage::new("error.file").with_param("details", details),
+            Self::MissingCredentials => UiMessage::new("error.missingCredentials"),
+            Self::MissingScan => UiMessage::new("error.missingScan"),
+            Self::Cancelled => UiMessage::new("error.cancelled"),
+        }
+    }
 }
 
 impl From<reqwest::Error> for RestoreError {

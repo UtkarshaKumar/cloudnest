@@ -72,7 +72,7 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, RestoreError
 fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), RestoreError> {
     let parent = path
         .parent()
-        .ok_or_else(|| RestoreError::File("Progress path has no parent directory".to_string()))?;
+        .ok_or_else(|| RestoreError::File("progress_path_missing_parent".to_string()))?;
     fs::create_dir_all(parent).map_err(|e| RestoreError::File(e.to_string()))?;
     let temp_path = path.with_extension("json.tmp");
     let body = serde_json::to_string_pretty(value).map_err(|e| RestoreError::File(e.to_string()))?;

@@ -3,7 +3,7 @@ use crate::restore::browser::ChromeAuthenticator;
 use crate::restore::checkpoint::CheckpointStore;
 use crate::restore::job::{CancellationToken, RestoreSupervisor};
 use crate::restore::models::{
-    AppPhase, Credentials, RestoreError, RestoreEvent, RestoreStats, UiSnapshot,
+    AppPhase, Credentials, RestoreError, RestoreEvent, RestoreStats, UiMessage, UiSnapshot,
 };
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State, Window};
@@ -20,7 +20,7 @@ struct AppSession {
     browser: Option<ChromeAuthenticator>,
     deleted_item_ids: Vec<String>,
     stats: RestoreStats,
-    message: String,
+    message: UiMessage,
     cancellation: Option<CancellationToken>,
 }
 
@@ -54,7 +54,7 @@ pub async fn start_auth(window: Window, state: State<'_, AppState>) -> Result<Ui
         let browser = session.browser.take();
         *session = AppSession {
             phase: AppPhase::SigningIn,
-            message: "Waiting for iCloud sign-in...".to_string(),
+            message: msg("status.signingIn"),
             ..AppSession::default()
         };
         browser
@@ -73,7 +73,7 @@ pub async fn start_auth(window: Window, state: State<'_, AppState>) -> Result<Ui
         session.credentials = Some(credentials);
         session.browser = Some(browser);
         session.phase = AppPhase::ReadyToScan;
-        session.message = "Sign-in detected. Ready to scan deleted items.".to_string();
+        session.message = msg("status.authenticated");
     }
 
     emit_event(&window, RestoreEvent::Authenticated)?;
@@ -111,7 +111,7 @@ pub async fn scan_deleted_items(
     update_phase(
         &state,
         AppPhase::Scanning,
-        "Finding deleted files and folders...".to_string(),
+        msg("status.scanning"),
     )
     .await;
 
@@ -134,10 +134,8 @@ pub async fn scan_deleted_items(
         let mut session = state.session.lock().await;
         session.deleted_item_ids = item_ids;
         session.phase = AppPhase::ReadyToRestore;
-        session.message = format!(
-            "{} deleted iCloud Drive items are ready to restore.",
-            session.deleted_item_ids.len()
-        );
+        session.message = msg("status.scanComplete")
+            .with_param("total", session.deleted_item_ids.len());
         session.stats = RestoreStats {
             total: session.deleted_item_ids.len(),
             ..RestoreStats::default()
@@ -179,7 +177,7 @@ pub async fn retry_failed(
         .map_err(to_ui_error)?;
 
     if progress.failed_ids.is_empty() {
-        return Err("There are no failed items to retry.".to_string());
+        return Err(encode_message(&msg("status.retryFailedEmpty")));
     }
 
     run_restore(app, window, state, credentials, progress.failed_ids).await
@@ -196,7 +194,7 @@ pub async fn pause_restore(state: State<'_, AppState>) -> Result<UiSnapshot, Str
     update_phase(
         &state,
         AppPhase::Paused,
-        "Restore will pause after the current batch. Progress is saved.".to_string(),
+        msg("status.pausePending"),
     )
     .await;
     get_restore_state(state).await
@@ -218,7 +216,7 @@ async fn run_restore(
         let mut session = state.session.lock().await;
         session.phase = AppPhase::Restoring;
         session.cancellation = Some(cancellation.clone());
-        session.message = "Restoring your files...".to_string();
+        session.message = msg("status.restoring");
     }
 
     let result = supervisor
@@ -234,26 +232,22 @@ async fn run_restore(
             Ok(stats) => {
                 session.phase = AppPhase::Complete;
                 session.message = if stats.failed == 0 {
-                    format!(
-                        "Recovery complete. {} items were restored to iCloud Drive.",
-                        stats.restored
-                    )
+                    msg("status.complete").with_param("restored", stats.restored)
                 } else {
-                    format!(
-                        "Restored {} items. {} items need another try.",
-                        stats.restored, stats.failed
-                    )
+                    msg("status.partialComplete")
+                        .with_param("restored", stats.restored)
+                        .with_param("failed", stats.failed)
                 };
                 session.stats = stats;
             }
             Err(RestoreError::Cancelled) => {
                 session.phase = AppPhase::Paused;
-                session.message = "Restore paused. Progress is saved.".to_string();
+                session.message = msg("status.paused");
             }
             Err(error) => {
                 session.phase = AppPhase::Error;
-                session.message = error.to_string();
-                return Err(session.message.clone());
+                session.message = error.message();
+                return Err(encode_message(&session.message));
             }
         }
     }
@@ -280,7 +274,7 @@ async fn scanned_item_ids(state: &State<'_, AppState>) -> Result<Vec<String>, Re
     }
 }
 
-async fn update_phase(state: &State<'_, AppState>, phase: AppPhase, message: String) {
+async fn update_phase(state: &State<'_, AppState>, phase: AppPhase, message: UiMessage) {
     let mut session = state.session.lock().await;
     session.phase = phase;
     session.message = message;
@@ -290,18 +284,34 @@ fn checkpoint_store(app: &AppHandle) -> Result<CheckpointStore, String> {
     let dir: PathBuf = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Could not open app data folder: {e}"))?;
+        .map_err(|e| encode_message(&msg("error.appDataDir").with_param("details", e)))?;
     CheckpointStore::new(dir).map_err(to_ui_error)
 }
 
 fn emit_event(window: &Window, event: RestoreEvent) -> Result<(), String> {
     window
         .emit("restore-event", event)
-        .map_err(|e| format!("Could not update the app window: {e}"))
+        .map_err(|e| encode_message(&msg("error.windowUpdate").with_param("details", e)))
 }
 
 fn to_ui_error(error: RestoreError) -> String {
-    redact_sensitive(&error.to_string())
+    let message = error.message();
+    encode_message(&UiMessage {
+        id: message.id,
+        params: message
+            .params
+            .into_iter()
+            .map(|(key, value)| (key, redact_sensitive(&value)))
+            .collect(),
+    })
+}
+
+fn msg(id: &str) -> UiMessage {
+    UiMessage::new(id)
+}
+
+fn encode_message(message: &UiMessage) -> String {
+    serde_json::to_string(message).unwrap_or_else(|_| "{\"id\":\"error.unknown\",\"params\":{}}".to_string())
 }
 
 fn redact_sensitive(value: &str) -> String {
@@ -368,7 +378,7 @@ impl Default for AppSession {
             browser: None,
             deleted_item_ids: Vec::new(),
             stats: RestoreStats::default(),
-            message: "Ready to recover deleted iCloud Drive files.".to_string(),
+            message: msg("status.ready"),
             cancellation: None,
         }
     }

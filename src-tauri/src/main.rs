@@ -18,5 +18,5 @@ fn main() {
             commands::retry_failed,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running CloudNest");
+        .expect("cloudnest_run_failed");
 }

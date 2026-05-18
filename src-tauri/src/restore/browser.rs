@@ -246,7 +246,7 @@ impl RestoreErrorDetail for RestoreError {
     fn with_detail(self, detail: String) -> RestoreError {
         match self {
             RestoreError::ChromeConnectionFailed => {
-                RestoreError::Api(format!("Chrome connection failed: {detail}"))
+                RestoreError::Api(format!("chrome_connection_failed:{detail}"))
             }
             other => other,
         }
