@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const ICLOUD_RECOVERY_URL: &str = "https://www.icloud.com/recovery/";
-pub const CHROME_DEBUG_URL: &str = "http://127.0.0.1:9222";
 pub const DEFAULT_CLIENT_BUILD: &str = "2546Build54";
 pub const DEFAULT_RESTORE_BATCH_SIZE: usize = 100;
 pub const DEFAULT_FETCH_PAGE_SIZE: usize = 2_000;

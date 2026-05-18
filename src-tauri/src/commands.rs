@@ -27,16 +27,14 @@ struct AppSession {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            session: Mutex::new(AppSession {
-                phase: AppPhase::Welcome,
-                credentials: None,
-                browser: None,
-                deleted_item_ids: Vec::new(),
-                stats: RestoreStats::default(),
-                message: "Ready to recover deleted iCloud Drive files.".to_string(),
-                cancellation: None,
-            }),
+            session: Mutex::new(AppSession::default()),
         }
+    }
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -48,14 +46,24 @@ pub async fn get_restore_state(state: State<'_, AppState>) -> Result<UiSnapshot,
 
 #[tauri::command]
 pub async fn start_auth(window: Window, state: State<'_, AppState>) -> Result<UiSnapshot, String> {
-    emit_event(&window, RestoreEvent::AuthStarted)?;
-    update_phase(
-        &state,
-        AppPhase::SigningIn,
-        "Waiting for iCloud sign-in...".to_string(),
-    )
-    .await;
+    let mut old_browser = {
+        let mut session = state.session.lock().await;
+        if let Some(token) = &session.cancellation {
+            token.cancel();
+        }
+        let browser = session.browser.take();
+        *session = AppSession {
+            phase: AppPhase::SigningIn,
+            message: "Waiting for iCloud sign-in...".to_string(),
+            ..AppSession::default()
+        };
+        browser
+    };
+    if let Some(browser) = &mut old_browser {
+        browser.shutdown().await;
+    }
 
+    emit_event(&window, RestoreEvent::AuthStarted)?;
     let mut browser = ChromeAuthenticator::new().map_err(to_ui_error)?;
     browser.connect_or_launch().await.map_err(to_ui_error)?;
     let credentials = browser.wait_for_login(300).await.map_err(to_ui_error)?;
@@ -69,6 +77,24 @@ pub async fn start_auth(window: Window, state: State<'_, AppState>) -> Result<Ui
     }
 
     emit_event(&window, RestoreEvent::Authenticated)?;
+    get_restore_state(state).await
+}
+
+#[tauri::command]
+pub async fn reset_session(state: State<'_, AppState>) -> Result<UiSnapshot, String> {
+    let mut old_browser = {
+        let mut session = state.session.lock().await;
+        if let Some(token) = &session.cancellation {
+            token.cancel();
+        }
+        let browser = session.browser.take();
+        *session = AppSession::default();
+        browser
+    };
+    if let Some(browser) = &mut old_browser {
+        browser.shutdown().await;
+    }
+
     get_restore_state(state).await
 }
 
@@ -275,7 +301,51 @@ fn emit_event(window: &Window, event: RestoreEvent) -> Result<(), String> {
 }
 
 fn to_ui_error(error: RestoreError) -> String {
-    error.to_string()
+    redact_sensitive(&error.to_string())
+}
+
+fn redact_sensitive(value: &str) -> String {
+    let mut redacted = value.to_string();
+    for key in [
+        "clientId=",
+        "dsid=",
+        "clientBuildNumber=",
+        "clientMasteringNumber=",
+        "Cookie:",
+        "cookie:",
+    ] {
+        redacted = redact_after_key(&redacted, key);
+    }
+    redacted
+}
+
+fn redact_after_key(value: &str, key: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut remaining = value;
+
+    while let Some(index) = remaining.find(key) {
+        let (before, after_before) = remaining.split_at(index);
+        output.push_str(before);
+        output.push_str(key);
+
+        let secret_start = key.len();
+        let mut secret = &after_before[secret_start..];
+        let whitespace_len = secret
+            .chars()
+            .take_while(|character| character.is_whitespace())
+            .map(char::len_utf8)
+            .sum::<usize>();
+        output.push_str(&secret[..whitespace_len]);
+        output.push_str("[redacted]");
+        secret = &secret[whitespace_len..];
+        let secret_end = secret
+            .find(['&', ' ', '"', '\'', ')', ','])
+            .unwrap_or(secret.len());
+        remaining = &secret[secret_end..];
+    }
+
+    output.push_str(remaining);
+    output
 }
 
 impl AppSession {
@@ -287,5 +357,34 @@ impl AppSession {
             message: self.message.clone(),
             can_resume,
         }
+    }
+}
+
+impl Default for AppSession {
+    fn default() -> Self {
+        Self {
+            phase: AppPhase::Welcome,
+            credentials: None,
+            browser: None,
+            deleted_item_ids: Vec::new(),
+            stats: RestoreStats::default(),
+            message: "Ready to recover deleted iCloud Drive files.".to_string(),
+            cancellation: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ui_errors_redact_sensitive_query_values() {
+        let error = "request failed for https://www.icloud.com/?clientId=abc&dsid=123 cookie: token";
+
+        assert_eq!(
+            redact_sensitive(error),
+            "request failed for https://www.icloud.com/?clientId=[redacted]&dsid=[redacted] cookie: [redacted]"
+        );
     }
 }

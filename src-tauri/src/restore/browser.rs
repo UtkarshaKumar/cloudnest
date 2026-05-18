@@ -1,11 +1,11 @@
 use crate::restore::models::{
-    Credentials, RestoreError, CHROME_DEBUG_URL, DEFAULT_CLIENT_BUILD, ICLOUD_RECOVERY_URL,
+    Credentials, RestoreError, DEFAULT_CLIENT_BUILD, ICLOUD_RECOVERY_URL,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -18,6 +18,7 @@ use url::Url;
 #[derive(Debug)]
 pub struct ChromeAuthenticator {
     client: reqwest::Client,
+    debug_port: u16,
     temp_profile: Option<TempDir>,
     chrome_child: Option<Child>,
 }
@@ -48,15 +49,17 @@ impl ChromeAuthenticator {
 
         Ok(Self {
             client,
+            debug_port: allocate_debug_port()?,
             temp_profile: None,
             chrome_child: None,
         })
     }
 
     pub async fn connect_or_launch(&mut self) -> Result<(), RestoreError> {
-        if is_port_open(9222) {
+        if self.chrome_child.is_some() && is_port_open(self.debug_port) {
             return Ok(());
         }
+        self.shutdown().await;
 
         let chrome_path = chrome_path().ok_or(RestoreError::ChromeMissing)?;
         let temp_profile = tempfile::Builder::new()
@@ -65,7 +68,7 @@ impl ChromeAuthenticator {
             .map_err(|e| RestoreError::File(e.to_string()))?;
 
         let child = Command::new(chrome_path)
-            .arg("--remote-debugging-port=9222")
+            .arg(format!("--remote-debugging-port={}", self.debug_port))
             .arg(format!("--user-data-dir={}", temp_profile.path().display()))
             .arg("--no-first-run")
             .arg(ICLOUD_RECOVERY_URL)
@@ -79,12 +82,21 @@ impl ChromeAuthenticator {
 
         for attempt in 0..8 {
             sleep(Duration::from_millis(500 + attempt * 250)).await;
-            if is_port_open(9222) {
+            if is_port_open(self.debug_port) {
                 return Ok(());
             }
         }
 
+        self.shutdown().await;
         Err(RestoreError::ChromeConnectionFailed)
+    }
+
+    pub async fn shutdown(&mut self) {
+        if let Some(mut child) = self.chrome_child.take() {
+            let _ = child.start_kill();
+            let _ = timeout(Duration::from_secs(2), child.wait()).await;
+        }
+        self.temp_profile = None;
     }
 
     pub async fn wait_for_login(&self, timeout_seconds: u64) -> Result<Credentials, RestoreError> {
@@ -185,7 +197,7 @@ impl ChromeAuthenticator {
     async fn pick_page_target(&self) -> Result<CdpTarget, RestoreError> {
         let targets: Vec<CdpTarget> = self
             .client
-            .get(format!("{CHROME_DEBUG_URL}/json"))
+            .get(format!("{}/json", self.debug_url()))
             .send()
             .await
             .map_err(|e| RestoreError::ChromeConnectionFailed.with_detail(e.to_string()))?
@@ -195,15 +207,15 @@ impl ChromeAuthenticator {
 
         targets
             .iter()
-            .cloned()
             .find(|target| {
                 target.target_type.as_deref() == Some("page")
                     && target.websocket_debugger_url.is_some()
                     && target
                         .url
                         .as_deref()
-                        .is_some_and(|url| url.contains("icloud.com"))
+                        .is_some_and(is_icloud_url)
             })
+            .cloned()
             .or_else(|| {
                 targets.into_iter().find(|target| {
                     target.target_type.as_deref() == Some("page")
@@ -211,6 +223,18 @@ impl ChromeAuthenticator {
                 })
             })
             .ok_or(RestoreError::ChromeConnectionFailed)
+    }
+
+    fn debug_url(&self) -> String {
+        format!("http://127.0.0.1:{}", self.debug_port)
+    }
+}
+
+impl Drop for ChromeAuthenticator {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.chrome_child.take() {
+            let _ = child.start_kill();
+        }
     }
 }
 
@@ -273,6 +297,15 @@ fn is_port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&address, Duration::from_millis(300)).is_ok()
 }
 
+fn allocate_debug_port() -> Result<u16, RestoreError> {
+    let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+        .map_err(|e| RestoreError::ChromeConnectionFailed.with_detail(e.to_string()))?;
+    listener
+        .local_addr()
+        .map(|address| address.port())
+        .map_err(|e| RestoreError::ChromeConnectionFailed.with_detail(e.to_string()))
+}
+
 async fn send_cdp<S>(
     ws: &mut S,
     id: u64,
@@ -316,7 +349,7 @@ where
 }
 
 pub fn capture_credentials_from_url(url: &str) -> Option<CapturedRequestCredentials> {
-    if !url.contains("icloud.com") {
+    if !is_icloud_url(url) {
         return None;
     }
 
@@ -406,7 +439,7 @@ fn parse_cdp_cookies(value: &Value) -> Option<String> {
             let name = cookie.get("name")?.as_str()?;
             let value = cookie.get("value")?.as_str()?;
             let domain = cookie.get("domain").and_then(Value::as_str);
-            if domain.is_some_and(|domain| !domain.contains("icloud.com")) {
+            if domain.is_some_and(|domain| !is_icloud_cookie_domain(domain)) {
                 return None;
             }
             Some(format!("{name}={value}"))
@@ -419,6 +452,22 @@ fn parse_cdp_cookies(value: &Value) -> Option<String> {
     } else {
         Some(cookie_header)
     }
+}
+
+fn is_icloud_url(url: &str) -> bool {
+    Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(is_icloud_host))
+        .unwrap_or(false)
+}
+
+fn is_icloud_host(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    host == "icloud.com" || host.ends_with(".icloud.com")
+}
+
+fn is_icloud_cookie_domain(domain: &str) -> bool {
+    is_icloud_host(domain.trim_start_matches('.'))
 }
 
 #[cfg(test)]
@@ -441,6 +490,7 @@ mod tests {
     fn ignores_urls_without_credentials() {
         assert!(capture_credentials_from_url("https://www.icloud.com/recovery/").is_none());
         assert!(capture_credentials_from_url("https://example.com/?clientId=a&dsid=b").is_none());
+        assert!(capture_credentials_from_url("https://www.icloud.com.evil.test/?clientId=a&dsid=b").is_none());
     }
 
     #[test]

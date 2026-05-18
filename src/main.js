@@ -171,6 +171,7 @@ function render() {
   `;
 
   bindActions();
+  syncProgressStyles();
 }
 
 function renderPanel() {
@@ -270,7 +271,7 @@ function restorePanel() {
       ${statusMessage()}
       <div class="progress-wrap" aria-label="Restore progress">
         <div class="progress-label"><span>${percent}% complete</span><span>${formatNumber(completed)} of ${formatNumber(total)}</span></div>
-        <div class="progress-track"><div class="progress-fill" style="width: ${percent}%"></div></div>
+        <div class="progress-track"><div class="progress-fill" data-progress="${percent}"></div></div>
       </div>
       <div class="metric-row">
         ${metric("Restored", formatNumber(state.stats.restored), "success")}
@@ -370,6 +371,13 @@ function bindActions() {
   });
 }
 
+function syncProgressStyles() {
+  app.querySelectorAll("[data-progress]").forEach((element) => {
+    const progress = Math.min(100, Math.max(0, Number(element.dataset.progress) || 0));
+    element.style.width = `${progress}%`;
+  });
+}
+
 async function dispatch(action) {
   if (state.busy && !["toggle-details", "privacy", "pause"].includes(action)) return;
 
@@ -388,13 +396,9 @@ async function dispatch(action) {
       return;
     }
     if (action === "reset") {
-      Object.assign(state, {
-        phase: "Welcome",
-        deletedCount: 0,
-        stats: { total: 0, restored: 0, failed: 0, failed_ids: [] },
-        message: "Ready to recover deleted iCloud Drive files.",
-        busy: false,
-      });
+      const snapshot = await safeInvoke("reset_session");
+      resetLocalState();
+      mergeSnapshot(snapshot);
       render();
       return;
     }
@@ -455,7 +459,28 @@ async function safeInvoke(command) {
     };
   }
 
+  if (command === "reset_session") {
+    return {
+      phase: "Welcome",
+      deleted_count: 0,
+      stats: { total: 0, restored: 0, failed: 0, failed_ids: [] },
+      message: "Ready to recover deleted iCloud Drive files.",
+      can_resume: false,
+    };
+  }
+
   throw new Error("Desktop-only action. Open CloudNest as a macOS app to continue.");
+}
+
+function resetLocalState() {
+  Object.assign(state, {
+    phase: "Welcome",
+    deletedCount: 0,
+    stats: { total: 0, restored: 0, failed: 0, failed_ids: [] },
+    message: "Ready to recover deleted iCloud Drive files.",
+    busy: false,
+    log: [],
+  });
 }
 
 async function safeOpenUrl(url) {
