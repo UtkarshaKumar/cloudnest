@@ -4,6 +4,7 @@ use crate::restore::models::{
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -125,7 +126,9 @@ impl ChromeAuthenticator {
         }
 
         let mut captured: Option<CapturedRequestCredentials> = None;
-        let mut cookie_request_id: Option<u64> = None;
+        let mut captured_request_id: Option<String> = None;
+        let mut cookie_request_ids: HashSet<u64> = HashSet::new();
+        let mut extra_headers_by_request_id: HashMap<String, String> = HashMap::new();
 
         while let Some(message) = ws.next().await {
             let message = message.map_err(|e| RestoreError::ChromeConnectionFailed.with_detail(e.to_string()))?;
@@ -136,35 +139,42 @@ impl ChromeAuthenticator {
             let value: Value = serde_json::from_str(message.to_text().unwrap_or(""))
                 .map_err(|e| RestoreError::Api(e.to_string()))?;
 
+            if let Some((request_id, cookie_header)) = cookie_header_from_extra_info(&value) {
+                if captured_request_id.as_deref() == Some(request_id.as_str()) {
+                    if let Some(captured) = captured.clone() {
+                        return Ok(credentials_from_capture(captured, cookie_header));
+                    }
+                }
+                extra_headers_by_request_id.insert(request_id, cookie_header);
+            }
+
             if captured.is_none() {
-                if let Some(url) = value
-                    .pointer("/params/request/url")
-                    .and_then(Value::as_str)
-                {
-                    captured = capture_credentials_from_url(url);
-                    if captured.is_some() {
-                        cookie_request_id = Some(4);
-                        send_cdp(
-                            &mut ws,
-                            4,
-                            "Network.getCookies",
-                            json!({ "urls": ["https://www.icloud.com"] }),
-                        )
-                        .await?;
+                if let Some((request_id, url, cookie_header)) = request_credentials_event_parts(&value) {
+                    if let Some(next_capture) = capture_credentials_from_url(url) {
+                        if let Some(cookie_header) = cookie_header {
+                            return Ok(credentials_from_capture(next_capture, cookie_header));
+                        }
+
+                        if let Some(cookie_header) = extra_headers_by_request_id.remove(&request_id) {
+                            return Ok(credentials_from_capture(next_capture, cookie_header));
+                        }
+
+                        captured = Some(next_capture);
+                        captured_request_id = Some(request_id);
+                        request_cookie_snapshots(&mut ws, &mut cookie_request_ids).await?;
                     }
                 }
             }
 
-            if value.get("id").and_then(Value::as_u64) == cookie_request_id {
-                let cookies = parse_cdp_cookies(&value)?;
-                if let Some(captured) = captured {
-                    return Ok(Credentials {
-                        cookies,
-                        client_id: captured.client_id,
-                        dsid: captured.dsid,
-                        client_build_number: captured.client_build_number,
-                        client_mastering_number: captured.client_mastering_number,
-                    });
+            if value
+                .get("id")
+                .and_then(Value::as_u64)
+                .is_some_and(|id| cookie_request_ids.contains(&id))
+            {
+                if let Some(cookies) = parse_cdp_cookies(&value) {
+                    if let Some(captured) = captured.clone() {
+                        return Ok(credentials_from_capture(captured, cookies));
+                    }
                 }
             }
         }
@@ -283,6 +293,28 @@ where
         .map_err(|e| RestoreError::ChromeConnectionFailed.with_detail(e.to_string()))
 }
 
+async fn request_cookie_snapshots<S>(
+    ws: &mut S,
+    cookie_request_ids: &mut HashSet<u64>,
+) -> Result<(), RestoreError>
+where
+    S: SinkExt<tokio_tungstenite::tungstenite::Message> + Unpin,
+    <S as futures_util::Sink<tokio_tungstenite::tungstenite::Message>>::Error: std::fmt::Display,
+{
+    let requests = [
+        (4, "Network.getCookies", json!({ "urls": ["https://www.icloud.com", "https://www.icloud.com/recovery/"] })),
+        (5, "Network.getAllCookies", json!({})),
+        (6, "Storage.getCookies", json!({})),
+    ];
+
+    for (id, method, params) in requests {
+        cookie_request_ids.insert(id);
+        send_cdp(ws, id, method, params).await?;
+    }
+
+    Ok(())
+}
+
 pub fn capture_credentials_from_url(url: &str) -> Option<CapturedRequestCredentials> {
     if !url.contains("icloud.com") {
         return None;
@@ -313,21 +345,80 @@ pub fn capture_credentials_from_url(url: &str) -> Option<CapturedRequestCredenti
     })
 }
 
-fn parse_cdp_cookies(value: &Value) -> Result<String, RestoreError> {
+fn credentials_from_capture(captured: CapturedRequestCredentials, cookies: String) -> Credentials {
+    Credentials {
+        cookies,
+        client_id: captured.client_id,
+        dsid: captured.dsid,
+        client_build_number: captured.client_build_number,
+        client_mastering_number: captured.client_mastering_number,
+    }
+}
+
+fn request_credentials_event_parts(value: &Value) -> Option<(String, &str, Option<String>)> {
+    if value.get("method").and_then(Value::as_str) != Some("Network.requestWillBeSent") {
+        return None;
+    }
+
+    let request_id = value
+        .pointer("/params/requestId")
+        .and_then(Value::as_str)?
+        .to_string();
+    let url = value.pointer("/params/request/url").and_then(Value::as_str)?;
+    let cookie_header = header_value(value.pointer("/params/request/headers")?, "cookie");
+
+    Some((request_id, url, cookie_header))
+}
+
+fn cookie_header_from_extra_info(value: &Value) -> Option<(String, String)> {
+    if value.get("method").and_then(Value::as_str) != Some("Network.requestWillBeSentExtraInfo") {
+        return None;
+    }
+
+    let request_id = value
+        .pointer("/params/requestId")
+        .and_then(Value::as_str)?
+        .to_string();
+    let cookie_header = header_value(value.pointer("/params/headers")?, "cookie")?;
+
+    Some((request_id, cookie_header))
+}
+
+fn header_value(headers: &Value, name: &str) -> Option<String> {
+    let headers = headers.as_object()?;
+    headers.iter().find_map(|(key, value)| {
+        if key.eq_ignore_ascii_case(name) {
+            value.as_str().map(ToString::to_string)
+        } else {
+            None
+        }
+    })
+}
+
+fn parse_cdp_cookies(value: &Value) -> Option<String> {
     let cookies = value
         .pointer("/result/cookies")
-        .and_then(Value::as_array)
-        .ok_or_else(|| RestoreError::Api("Chrome did not return iCloud cookies.".to_string()))?;
+        .and_then(Value::as_array)?;
 
-    Ok(cookies
+    let cookie_header = cookies
         .iter()
         .filter_map(|cookie| {
             let name = cookie.get("name")?.as_str()?;
             let value = cookie.get("value")?.as_str()?;
+            let domain = cookie.get("domain").and_then(Value::as_str);
+            if domain.is_some_and(|domain| !domain.contains("icloud.com")) {
+                return None;
+            }
             Some(format!("{name}={value}"))
         })
         .collect::<Vec<_>>()
-        .join("; "))
+        .join("; ");
+
+    if cookie_header.is_empty() {
+        None
+    } else {
+        Some(cookie_header)
+    }
 }
 
 #[cfg(test)]
@@ -365,5 +456,60 @@ mod tests {
         });
 
         assert_eq!(parse_cdp_cookies(&value).unwrap(), "a=1; b=2");
+    }
+
+    #[test]
+    fn parses_cookie_header_from_authenticated_request() {
+        let value = json!({
+            "method": "Network.requestWillBeSent",
+            "params": {
+                "requestId": "123",
+                "request": {
+                    "url": "https://www.icloud.com/some/api?clientId=abc&dsid=123",
+                    "headers": {
+                        "Cookie": "X-APPLE-WEBAUTH=token; other=value"
+                    }
+                }
+            }
+        });
+
+        let (request_id, url, cookie_header) = request_credentials_event_parts(&value).unwrap();
+
+        assert_eq!(request_id, "123");
+        assert!(url.contains("clientId=abc"));
+        assert_eq!(cookie_header.unwrap(), "X-APPLE-WEBAUTH=token; other=value");
+    }
+
+    #[test]
+    fn parses_cookie_header_from_extra_info() {
+        let value = json!({
+            "method": "Network.requestWillBeSentExtraInfo",
+            "params": {
+                "requestId": "extra-1",
+                "headers": {
+                    "cookie": "X-APPLE-WEBAUTH=token"
+                }
+            }
+        });
+
+        assert_eq!(
+            cookie_header_from_extra_info(&value).unwrap(),
+            ("extra-1".to_string(), "X-APPLE-WEBAUTH=token".to_string())
+        );
+    }
+
+    #[test]
+    fn cdp_cookie_parser_ignores_non_icloud_domains() {
+        let value = json!({
+            "id": 4,
+            "result": {
+                "cookies": [
+                    {"name": "a", "value": "1", "domain": ".icloud.com"},
+                    {"name": "b", "value": "2", "domain": ".example.com"}
+                ]
+            }
+        });
+
+        assert_eq!(parse_cdp_cookies(&value).unwrap(), "a=1");
     }
 }
