@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nickkuk/nickkuk.github.io/refs/heads/master/tauri-v2.schema.json",
+  "productName": "CloudNest",
+  "version": "0.1.0",
+  "identifier": "com.utkarshkumar.cloudnest",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1421",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "CloudNest",
+        "width": 1040,
+        "height": 760,
+        "resizable": true,
+        "fullscreen": false,
+        "minWidth": 840,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "signingIdentity": "-"
+    }
+  }
+}
