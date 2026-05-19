@@ -1,6 +1,6 @@
 export const en = {
   "app.productName": "CloudNest",
-  "app.title": "Soft iCloud recovery",
+  "app.title": "iCloud recovery",
   "app.recoverySteps": "Recovery steps",
   "app.privacyNote": "Your Apple ID password and two-factor code stay inside Apple's iCloud sign-in page. Progress is saved locally on this Mac.",
 
