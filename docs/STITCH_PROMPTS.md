@@ -4,7 +4,7 @@ Use these prompts in Google Stitch after the app shell is ready. The goal is a c
 
 ## Prompt 1: Welcome And Sign-In
 
-Design a minimalist macOS desktop app screen for a cute utility called "CloudNest" that helps users recover deleted iCloud Drive files. Calm, trustworthy, privacy-first. White warm-gray background, centered rounded card, soft blue primary button, subtle cloud nest/folder restore icon, Google Font Inter or Instrument Sans. Screen includes title "Recover deleted iCloud Drive files", supporting copy "CloudNest gently finds recently deleted items and brings them back home safely in batches.", primary button "Start Recovery", secondary link "How this keeps your data private". Native Mac spacing, no dark terminal styling, no clutter.
+Design a minimalist macOS desktop app screen for a cute utility called "CloudNest" that helps users recover deleted iCloud Drive files. Calm, trustworthy, privacy-first. White warm-gray background, centered rounded card, soft blue primary button, subtle cloud nest/folder restore icon, Google Font Inter or Instrument Sans. Screen includes title "Recover deleted iCloud Drive files", supporting copy "CloudNest gently finds recently deleted items and brings them back home safely in batches.", primary button "Start Recovery". Native Mac spacing, no dark terminal styling, no clutter.
 
 ## Prompt 2: Recovery Stepper
 

@@ -15,8 +15,6 @@ export const en = {
   "welcome.title": "Recover deleted iCloud Drive files",
   "welcome.lede": "CloudNest gently finds recently deleted items and brings them back home safely in batches.",
   "welcome.start": "Start Recovery",
-  "welcome.privacyAction": "How this keeps your data private",
-  "welcome.privacyCopy": "Your Apple ID password and two-factor code stay inside Apple's iCloud sign-in page. Session credentials are kept in memory only and are not written to disk.",
 
   "signIn.eyebrow": "Step 2",
   "signIn.title": "Sign in with Apple",

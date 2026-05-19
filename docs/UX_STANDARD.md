@@ -32,7 +32,6 @@ Primary copy:
 - Title: `Recover deleted iCloud Drive files`
 - Body: `Sign in with Apple in Chrome, scan recently deleted items, and restore them safely in batches.`
 - Primary button: `Start Recovery`
-- Secondary link: `How this keeps your data private`
 
 ### Sign In
 

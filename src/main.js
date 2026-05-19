@@ -227,10 +227,6 @@ function welcomePanel() {
       <div class="actions">
         ${button(t("welcome.start"), "start-auth", "primary")}
       </div>
-      <button class="link-button" data-action="privacy">${t("welcome.privacyAction")}</button>
-      <div class="callout hidden" id="privacy-copy">
-        ${t("welcome.privacyCopy")}
-      </div>
     </div>
   `;
 }
@@ -422,16 +418,12 @@ async function dispatch(action) {
     return;
   }
 
-  if (state.busy && !["toggle-details", "privacy", "pause"].includes(action)) return;
+  if (state.busy && !["toggle-details", "pause"].includes(action)) return;
 
   try {
     if (action === "toggle-details") {
       state.detailsOpen = !state.detailsOpen;
       render();
-      return;
-    }
-    if (action === "privacy") {
-      document.getElementById("privacy-copy")?.classList.toggle("hidden");
       return;
     }
     if (action === "chrome-download") {

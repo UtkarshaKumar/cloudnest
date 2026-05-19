@@ -245,7 +245,6 @@ button {
 }
 
 .btn,
-.link-button,
 .details-toggle {
   border: 0;
   cursor: pointer;
@@ -278,16 +277,14 @@ button {
   background: var(--color-surface-muted);
 }
 
-.link-button,
 .details-toggle {
   margin-top: 18px;
   padding: 0;
   color: var(--color-action);
   background: transparent;
-  font-weight: 700;
+  font-weight: 600;
 }
 
-.callout,
 .status {
   margin-top: 20px;
   padding: 14px 16px;
@@ -295,7 +292,6 @@ button {
   line-height: 1.55;
 }
 
-.callout,
 .status.info {
   color: #24537b;
   background: #e9f3ff;
