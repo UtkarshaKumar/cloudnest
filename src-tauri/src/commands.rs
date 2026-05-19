@@ -1,9 +1,10 @@
 use crate::restore::api::ICloudApiClient;
 use crate::restore::browser::ChromeAuthenticator;
 use crate::restore::checkpoint::CheckpointStore;
-use crate::restore::job::{CancellationToken, RestoreSupervisor};
+use crate::restore::job::RestoreSupervisor;
 use crate::restore::models::{
-    AppPhase, Credentials, RestoreError, RestoreEvent, RestoreStats, UiMessage, UiSnapshot,
+    AppPhase, CancellationToken, Credentials, RestoreError, RestoreEvent, RestoreStats, UiMessage,
+    UiSnapshot,
 };
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State, Window};
@@ -19,6 +20,8 @@ struct AppSession {
     credentials: Option<Credentials>,
     browser: Option<ChromeAuthenticator>,
     deleted_item_ids: Vec<String>,
+    /// Items counted in tombstone checkpoint when user stops mid-scan (resume with Scan again).
+    partial_scan_item_count: usize,
     stats: RestoreStats,
     message: UiMessage,
     cancellation: Option<CancellationToken>,
@@ -81,6 +84,18 @@ pub async fn start_auth(window: Window, state: State<'_, AppState>) -> Result<Ui
 }
 
 #[tauri::command]
+pub async fn cancel_scan(state: State<'_, AppState>) -> Result<(), String> {
+    let session = state.session.lock().await;
+    if session.phase != AppPhase::Scanning {
+        return Ok(());
+    }
+    if let Some(token) = &session.cancellation {
+        token.cancel();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn reset_session(state: State<'_, AppState>) -> Result<UiSnapshot, String> {
     let mut old_browser = {
         let mut session = state.session.lock().await;
@@ -106,49 +121,88 @@ pub async fn scan_deleted_items(
 ) -> Result<UiSnapshot, String> {
     let credentials = credentials(&state).await.map_err(to_ui_error)?;
     let store = checkpoint_store(&app)?;
-    let api = ICloudApiClient::new().map_err(to_ui_error)?;
-
-    update_phase(
-        &state,
-        AppPhase::Scanning,
-        msg("status.scanning"),
-    )
-    .await;
-
-    let items = api
-        .fetch_deleted_items(&credentials, Some(&store), |progress| {
-            let _ = emit_event(
-                &window,
-                RestoreEvent::ScanProgress {
-                    page: progress.page,
-                    page_count: progress.page_count,
-                    total: progress.total,
-                },
-            );
-        })
-        .await
+    let api = ICloudApiClient::with_base_url(credentials.resolved_docws_base_url())
         .map_err(to_ui_error)?;
 
-    let item_ids: Vec<String> = items.into_iter().map(|item| item.item_id).collect();
+    let cancellation = CancellationToken::default();
     {
         let mut session = state.session.lock().await;
-        session.deleted_item_ids = item_ids;
-        session.phase = AppPhase::ReadyToRestore;
-        session.message = msg("status.scanComplete")
-            .with_param("total", session.deleted_item_ids.len());
-        session.stats = RestoreStats {
-            total: session.deleted_item_ids.len(),
-            ..RestoreStats::default()
-        };
+        session.partial_scan_item_count = 0;
+        session.cancellation = Some(cancellation.clone());
+        session.phase = AppPhase::Scanning;
+        session.message = msg("status.scanning");
     }
 
-    emit_event(
-        &window,
-        RestoreEvent::ScanComplete {
-            total: state.session.lock().await.deleted_item_ids.len(),
-        },
-    )?;
-    get_restore_state(state).await
+    let fetch_result = api
+        .fetch_deleted_items(
+            &credentials,
+            Some(&store),
+            Some(&cancellation),
+            |progress| {
+                let _ = emit_event(
+                    &window,
+                    RestoreEvent::ScanProgress {
+                        page: progress.page,
+                        page_count: progress.page_count,
+                        total: progress.total,
+                    },
+                );
+            },
+        )
+        .await;
+
+    {
+        let mut session = state.session.lock().await;
+        session.cancellation = None;
+    }
+
+    match fetch_result {
+        Ok(items) => {
+            let item_ids: Vec<String> = items.into_iter().map(|item| item.item_id).collect();
+            {
+                let mut session = state.session.lock().await;
+                session.deleted_item_ids = item_ids;
+                session.partial_scan_item_count = 0;
+                session.phase = AppPhase::ReadyToRestore;
+                session.message =
+                    msg("status.scanComplete").with_param("total", session.deleted_item_ids.len());
+                session.stats = RestoreStats {
+                    total: session.deleted_item_ids.len(),
+                    ..RestoreStats::default()
+                };
+            }
+
+            emit_event(
+                &window,
+                RestoreEvent::ScanComplete {
+                    total: state.session.lock().await.deleted_item_ids.len(),
+                },
+            )?;
+            get_restore_state(state).await
+        }
+        Err(RestoreError::ScanCancelled) => {
+            let partial = store
+                .load_checkpoint()
+                .map_err(to_ui_error)?
+                .map(|checkpoint| checkpoint.item_ids.len())
+                .unwrap_or(0);
+            {
+                let mut session = state.session.lock().await;
+                session.partial_scan_item_count = partial;
+                session.phase = AppPhase::ReadyToScan;
+                session.message = msg("status.scanCancelledSave").with_param("count", partial);
+            }
+
+            emit_event(
+                &window,
+                RestoreEvent::ScanPaused {
+                    partial_total: partial,
+                },
+            )?;
+            get_restore_state(state).await
+        }
+        Err(error) => Err(to_ui_error(error)),
+    }
 }
 
 #[tauri::command]
@@ -191,12 +245,7 @@ pub async fn pause_restore(state: State<'_, AppState>) -> Result<UiSnapshot, Str
             token.cancel();
         }
     }
-    update_phase(
-        &state,
-        AppPhase::Paused,
-        msg("status.pausePending"),
-    )
-    .await;
+    update_phase(&state, AppPhase::Paused, msg("status.pausePending")).await;
     get_restore_state(state).await
 }
 
@@ -208,7 +257,8 @@ async fn run_restore(
     item_ids: Vec<String>,
 ) -> Result<UiSnapshot, String> {
     let store = checkpoint_store(&app)?;
-    let api = ICloudApiClient::new().map_err(to_ui_error)?;
+    let api = ICloudApiClient::with_base_url(credentials.resolved_docws_base_url())
+        .map_err(to_ui_error)?;
     let supervisor = RestoreSupervisor::new(api, store);
     let cancellation = CancellationToken::default();
 
@@ -311,7 +361,8 @@ fn msg(id: &str) -> UiMessage {
 }
 
 fn encode_message(message: &UiMessage) -> String {
-    serde_json::to_string(message).unwrap_or_else(|_| "{\"id\":\"error.unknown\",\"params\":{}}".to_string())
+    serde_json::to_string(message)
+        .unwrap_or_else(|_| "{\"id\":\"error.unknown\",\"params\":{}}".to_string())
 }
 
 fn redact_sensitive(value: &str) -> String {
@@ -360,9 +411,14 @@ fn redact_after_key(value: &str, key: &str) -> String {
 
 impl AppSession {
     fn snapshot(&self, can_resume: bool) -> UiSnapshot {
+        let deleted_count = if self.deleted_item_ids.is_empty() {
+            self.partial_scan_item_count
+        } else {
+            self.deleted_item_ids.len()
+        };
         UiSnapshot {
             phase: self.phase.clone(),
-            deleted_count: self.deleted_item_ids.len(),
+            deleted_count,
             stats: self.stats.clone(),
             message: self.message.clone(),
             can_resume,
@@ -377,6 +433,7 @@ impl Default for AppSession {
             credentials: None,
             browser: None,
             deleted_item_ids: Vec::new(),
+            partial_scan_item_count: 0,
             stats: RestoreStats::default(),
             message: msg("status.ready"),
             cancellation: None,
@@ -390,7 +447,8 @@ mod tests {
 
     #[test]
     fn ui_errors_redact_sensitive_query_values() {
-        let error = "request failed for https://www.icloud.com/?clientId=abc&dsid=123 cookie: token";
+        let error =
+            "request failed for https://www.icloud.com/?clientId=abc&dsid=123 cookie: token";
 
         assert_eq!(
             redact_sensitive(error),

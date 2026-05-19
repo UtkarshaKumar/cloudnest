@@ -75,7 +75,8 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), Restore
         .ok_or_else(|| RestoreError::File("progress_path_missing_parent".to_string()))?;
     fs::create_dir_all(parent).map_err(|e| RestoreError::File(e.to_string()))?;
     let temp_path = path.with_extension("json.tmp");
-    let body = serde_json::to_string_pretty(value).map_err(|e| RestoreError::File(e.to_string()))?;
+    let body =
+        serde_json::to_string_pretty(value).map_err(|e| RestoreError::File(e.to_string()))?;
 
     fs::write(&temp_path, body).map_err(|e| RestoreError::File(e.to_string()))?;
     fs::rename(&temp_path, path).map_err(|e| RestoreError::File(e.to_string()))?;

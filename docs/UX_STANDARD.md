@@ -60,7 +60,7 @@ Primary copy:
 - Title: `Finding deleted items`
 - Body: `Scanning recently deleted iCloud Drive files and folders. Large accounts can take a few minutes.`
 - Progress label: `Page {page} scanned. {count} items found.`
-- Secondary button: `Cancel and Save Progress`
+- Secondary button: `Cancel and Save Progress` — stops after the current network page; tombstone checkpoint is saved on disk; tap Scan again to resume where you left off.
 
 ### Review
 
@@ -140,7 +140,7 @@ Messages use plain language and a clear next step.
 - Soft blue/teal action color.
 - Restrained red for blocking failures only.
 - Rounded cards, spacious rhythm, no dense tables on the happy path.
-- Font: Google `Instrument Sans`, bundled locally through the app build.
+- Font stack leads with Apple system UI fonts (`SF Pro Text`) with Instrument Sans as fallback for licensing parity across builds.
 - Icons: Google `Material Symbols Rounded`, bundled locally through the app build.
 
 ## Privacy Copy

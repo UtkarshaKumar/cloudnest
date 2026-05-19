@@ -1,6 +1,8 @@
 :root {
-  --font-sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  --font-mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Instrument Sans",
+    sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "IBM Plex Mono", Menlo, Consolas, monospace;
   --color-canvas: #f7f5f1;
   --color-surface: #fffdf9;
   --color-surface-muted: #f0ede7;
@@ -83,8 +85,8 @@ button {
   color: white;
   background: linear-gradient(135deg, var(--color-action), var(--color-cute));
   font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .brand-icon {
@@ -100,14 +102,16 @@ button {
 
 .brand h1 {
   font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .eyebrow {
   margin: 0 0 12px;
   color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
 }
 
@@ -140,7 +144,7 @@ button {
   border-radius: 50%;
   background: var(--color-surface-muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .stepper li.active {
@@ -218,17 +222,19 @@ button {
 .hero-card h2 {
   margin: 0;
   max-width: 620px;
-  font-size: clamp(34px, 5vw, 56px);
-  line-height: 0.98;
-  letter-spacing: -0.05em;
+  font-size: clamp(26px, 3.8vw, 38px);
+  font-weight: 600;
+  line-height: 1.14;
+  letter-spacing: -0.024em;
 }
 
 .lede {
   max-width: 600px;
-  margin: 22px 0 0;
+  margin: 18px 0 0;
   color: var(--color-text-muted);
-  font-size: 17px;
-  line-height: 1.65;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.58;
 }
 
 .actions {
@@ -249,7 +255,8 @@ button {
   min-height: 44px;
   padding: 0 18px;
   border-radius: var(--radius-control);
-  font-weight: 750;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .btn:disabled {
@@ -306,6 +313,10 @@ button {
   margin-top: 24px;
 }
 
+.metric-row-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .metric {
   min-width: 0;
   padding: 16px;
@@ -317,16 +328,20 @@ button {
 .metric span {
   display: block;
   color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .metric strong {
   display: block;
   margin-top: 8px;
-  font-size: 26px;
-  letter-spacing: -0.04em;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  word-break: break-word;
 }
 
 .metric.success strong {
@@ -347,7 +362,7 @@ button {
   margin-bottom: 10px;
   color: var(--color-text-muted);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .progress-track {

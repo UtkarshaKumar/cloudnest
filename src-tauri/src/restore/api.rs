@@ -1,7 +1,7 @@
 use crate::restore::checkpoint::CheckpointStore;
 use crate::restore::models::{
-    Credentials, DeletedItem, RestoreError, DEFAULT_FETCH_PAGE_SIZE, DEFAULT_MAX_RETRIES,
-    DEFAULT_RESTORE_BATCH_SIZE,
+    CancellationToken, Credentials, DeletedItem, RestoreError, DEFAULT_FETCH_PAGE_SIZE,
+    DEFAULT_MAX_RETRIES, DEFAULT_RESTORE_BATCH_SIZE, DOCWS_FALLBACK_ORIGIN,
 };
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE, COOKIE, ORIGIN, REFERER};
 use serde::Deserialize;
@@ -9,7 +9,7 @@ use serde_json::json;
 use std::time::Duration;
 use url::Url;
 
-pub const DEFAULT_BASE_URL: &str = "https://p107-docws.icloud.com";
+pub const DEFAULT_BASE_URL: &str = DOCWS_FALLBACK_ORIGIN;
 
 #[derive(Debug, Clone)]
 pub struct ICloudApiClient {
@@ -74,6 +74,7 @@ impl ICloudApiClient {
         &self,
         credentials: &Credentials,
         checkpoint_store: Option<&CheckpointStore>,
+        cancellation: Option<&CancellationToken>,
         mut on_progress: F,
     ) -> Result<Vec<DeletedItem>, RestoreError>
     where
@@ -113,8 +114,13 @@ impl ICloudApiClient {
             .collect();
 
         loop {
+            if cancellation.is_some_and(|token| token.is_cancelled()) {
+                return Err(RestoreError::ScanCancelled);
+            }
+
             checkpoint.page += 1;
-            let url = self.tombstones_url(credentials, checkpoint.continuation_marker.as_deref())?;
+            let url =
+                self.tombstones_url(credentials, checkpoint.continuation_marker.as_deref())?;
             let response = self
                 .client
                 .get(url)
@@ -129,7 +135,9 @@ impl ICloudApiClient {
             let data: TombstoneResponse = response.json().await?;
             let page_items = parse_tombstones(data.documents);
 
-            checkpoint.item_ids.extend(page_items.iter().map(|item| item.item_id.clone()));
+            checkpoint
+                .item_ids
+                .extend(page_items.iter().map(|item| item.item_id.clone()));
             all_items.extend(page_items.iter().cloned());
             checkpoint.continuation_marker = data.continuation_marker;
             checkpoint.complete = data.status.as_deref() != Some("MORE_AVAILABLE")
@@ -205,7 +213,10 @@ impl ICloudApiClient {
         {
             let mut query = url.query_pairs_mut();
             query.append_pair("clientBuildNumber", &credentials.client_build_number);
-            query.append_pair("clientMasteringNumber", &credentials.client_mastering_number);
+            query.append_pair(
+                "clientMasteringNumber",
+                &credentials.client_mastering_number,
+            );
             query.append_pair("clientId", &credentials.client_id);
             query.append_pair("dsid", &credentials.dsid);
             query.append_pair("limit", &DEFAULT_FETCH_PAGE_SIZE.to_string());
@@ -223,7 +234,10 @@ impl ICloudApiClient {
         {
             let mut query = url.query_pairs_mut();
             query.append_pair("clientBuildNumber", &credentials.client_build_number);
-            query.append_pair("clientMasteringNumber", &credentials.client_mastering_number);
+            query.append_pair(
+                "clientMasteringNumber",
+                &credentials.client_mastering_number,
+            );
             query.append_pair("clientId", &credentials.client_id);
             query.append_pair("dsid", &credentials.dsid);
         }
@@ -300,7 +314,11 @@ mod tests {
     use httpmock::prelude::*;
 
     fn creds() -> Credentials {
-        Credentials::new("ck=value".to_string(), "client".to_string(), "dsid".to_string())
+        Credentials::new(
+            "ck=value".to_string(),
+            "client".to_string(),
+            "dsid".to_string(),
+        )
     }
 
     #[test]
@@ -309,7 +327,10 @@ mod tests {
 
         assert_eq!(
             batch_item_ids(&ids, 2),
-            vec![vec!["a".to_string(), "b".to_string()], vec!["c".to_string()]]
+            vec![
+                vec!["a".to_string(), "b".to_string()],
+                vec!["c".to_string()]
+            ]
         );
     }
 
@@ -345,12 +366,18 @@ mod tests {
         let client = ICloudApiClient::with_base_url(server.base_url()).unwrap();
 
         let items = client
-            .fetch_deleted_items(&creds(), Some(&store), |_| {})
+            .fetch_deleted_items(&creds(), Some(&store), None, |_| {})
             .await
             .unwrap();
 
         next_page.assert();
-        assert_eq!(items.iter().map(|item| item.item_id.as_str()).collect::<Vec<_>>(), vec!["one", "two"]);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.item_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["one", "two"]
+        );
     }
 
     #[tokio::test]

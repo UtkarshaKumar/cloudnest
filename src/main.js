@@ -83,6 +83,16 @@ function handleRestoreEvent(event) {
       state.message = { id: "status.scanComplete", params: eventParams(event) };
       appendLog("log.scanComplete", eventParams(event));
       break;
+    case "scanPaused":
+      state.phase = "ReadyToScan";
+      state.deletedCount = event.partialTotal ?? event.partial_total ?? 0;
+      state.busy = false;
+      state.message = {
+        id: "status.scanCancelledSave",
+        params: { count: formatNumber(state.deletedCount) },
+      };
+      appendLog("log.scanCancelled", { count: formatNumber(state.deletedCount) });
+      break;
     case "restoreStarted":
       state.phase = "Restoring";
       state.stats.total = event.total;
@@ -139,6 +149,21 @@ function mergeSnapshot(snapshot) {
   state.deletedCount = snapshot.deleted_count ?? snapshot.deletedCount ?? 0;
   state.stats = normalizeStats(snapshot.stats);
   state.message = normalizeMessage(snapshot.message || state.message);
+  if (
+    state.message.id === "status.scanCancelledSave" &&
+    state.message.params?.count !== undefined &&
+    state.message.params.count !== ""
+  ) {
+    const raw = state.message.params.count;
+    const n = typeof raw === "number" ? raw : Number(String(raw).replace(/,/g, ""));
+    state.message = {
+      ...state.message,
+      params: {
+        ...state.message.params,
+        count: Number.isFinite(n) ? formatNumber(n) : String(raw),
+      },
+    };
+  }
 }
 
 function normalizeStats(stats = {}) {
@@ -235,13 +260,13 @@ function scanPanel() {
       <h2>${t("scan.title")}</h2>
       <p class="lede">${t("scan.lede")}</p>
       ${statusMessage()}
-      <div class="metric-row">
+      <div class="metric-row metric-row-two">
         ${metric(t("scan.itemsFound"), formatNumber(state.deletedCount))}
         ${metric(t("scan.mode"), t("scan.modeValue"))}
       </div>
       <div class="actions">
         ${button(scanning ? t("scan.scanning") : t("scan.action"), "scan", "primary", scanning)}
-        ${button(t("common.cancel"), "reset", "secondary")}
+        ${button(scanning ? t("scan.cancelSaveProgress") : t("common.cancel"), scanning ? "cancel-scan" : "reset", "secondary")}
       </div>
       ${detailsLog()}
     </div>
@@ -387,6 +412,16 @@ function syncProgressStyles() {
 }
 
 async function dispatch(action) {
+  if (action === "cancel-scan") {
+    try {
+      await safeInvoke("cancel_scan");
+    } catch (error) {
+      state.message = readableError(error);
+      render();
+    }
+    return;
+  }
+
   if (state.busy && !["toggle-details", "privacy", "pause"].includes(action)) return;
 
   try {
@@ -476,6 +511,10 @@ async function safeInvoke(command) {
       message: { id: "status.ready", params: {} },
       can_resume: false,
     };
+  }
+
+  if (command === "cancel_scan") {
+    return;
   }
 
   throw new Error(JSON.stringify({ id: "error.desktopOnly", params: {} }));

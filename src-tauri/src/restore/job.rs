@@ -1,28 +1,11 @@
 use crate::restore::api::{default_restore_batches, max_retries, ICloudApiClient};
 use crate::restore::checkpoint::{CheckpointStore, RestoreProgress};
-use crate::restore::models::{Credentials, RestoreError, RestoreEvent, RestoreStats, UiMessage};
-use std::collections::HashSet;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+use crate::restore::models::{
+    CancellationToken, Credentials, RestoreError, RestoreEvent, RestoreStats, UiMessage,
 };
+use std::collections::HashSet;
 use std::time::Instant;
 use tokio::time::{sleep, Duration};
-
-#[derive(Debug, Clone, Default)]
-pub struct CancellationToken {
-    cancelled: Arc<AtomicBool>,
-}
-
-impl CancellationToken {
-    pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::SeqCst);
-    }
-
-    pub fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::SeqCst)
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct RestoreSupervisor {
@@ -97,7 +80,11 @@ impl RestoreSupervisor {
                             total,
                             restored: restored_count,
                             failed: failed_count,
-                            eta_seconds: estimate_eta_seconds(started, restored_count + failed_count, total),
+                            eta_seconds: estimate_eta_seconds(
+                                started,
+                                restored_count + failed_count,
+                                total,
+                            ),
                             message: msg("status.restoreProgress")
                                 .with_param("batch", batch_index + 1)
                                 .with_param("totalBatches", batches.len()),
@@ -127,7 +114,11 @@ impl RestoreSupervisor {
                     total,
                     restored: restored_count,
                     failed: failed_count,
-                    eta_seconds: estimate_eta_seconds(started, restored_count + failed_count, total),
+                    eta_seconds: estimate_eta_seconds(
+                        started,
+                        restored_count + failed_count,
+                        total,
+                    ),
                     message: msg("status.restoreBatchNeedsRetry")
                         .with_param("batch", batch_index + 1)
                         .with_param("totalBatches", batches.len()),

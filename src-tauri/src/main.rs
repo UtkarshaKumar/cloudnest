@@ -11,6 +11,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_restore_state,
             commands::start_auth,
+            commands::cancel_scan,
             commands::reset_session,
             commands::scan_deleted_items,
             commands::start_restore,
