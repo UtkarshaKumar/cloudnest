@@ -4,6 +4,12 @@ Recover accidentally deleted iCloud Drive files and folders in bulk — somethin
 
 ![CloudNest welcome screen](docs/assets/cloudnest-welcome.png)
 
+## Why I built it
+
+I accidentally deleted a folder from iCloud Drive and spent hours trying to get it back. Apple's built-in recovery tool shows you the files but fails to restore them most of the time — especially when it's a whole folder structure. I ended up recovering things one file at a time through iCloud.com, clicking restore, waiting, refreshing, repeat.
+
+CloudNest automates all of that.
+
 ## Install
 
 Download the latest DMG from [Releases](https://github.com/UtkarshaKumar/cloudnest/releases), open it, and drag CloudNest to your Applications folder.
