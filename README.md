@@ -1,56 +1,43 @@
 # CloudNest
 
-CloudNest is a cute, calm macOS app for recovering deleted iCloud Drive files when iCloud.com becomes unreliable.
-
-It is built with Tauri 2, a vanilla Vite frontend, and a Rust-native restore core.
+Recover accidentally deleted iCloud Drive files and folders in bulk — something Apple's own recovery tool fails at nearly every time. Restores items back to their original folder structure.
 
 ![CloudNest welcome screen](docs/assets/cloudnest-welcome.png)
 
-The UI uses bundled Google font files: `Instrument Sans` for the product interface and `IBM Plex Mono` for technical logs. Icons use Google's `Material Symbols Rounded` font locally, so they render inside the packaged app without loading assets from a CDN.
+## Install
+
+Download the latest DMG from [Releases](https://github.com/UtkarshaKumar/cloudnest/releases), open it, and drag CloudNest to your Applications folder.
+
+The app is ad-hoc signed and not notarized, so macOS will quarantine it on first run. Clear the quarantine before launching:
+
+```bash
+xattr -cr /Applications/CloudNest.app
+```
 
 ## What It Does
 
-- Opens Chrome for Apple-managed iCloud sign-in.
-- Captures the temporary iCloud recovery session from Chrome DevTools Protocol.
-- Scans recently deleted iCloud Drive items.
-- Restores items in safe batches with retry and resume support.
-- Saves progress locally without writing Apple credentials to disk.
-
-## Development
-
-```bash
-npm install
-npm run tauri -- dev
-```
-
-## Build
-
-```bash
-npm run build
-npm run tauri -- build
-```
-
-The macOS app and DMG are created under Tauri's release bundle output.
-
-## Tests
-
-```bash
-cd src-tauri
-cargo test
-```
-
-The Rust test suite covers restore batching, checkpoint integrity, auth URL parsing, cookie extraction, cancellation, and resume behavior.
-
-## Visual QA
-
-The welcome screen above was captured from the production Vite build with local Chrome headless.
-
-## Localization And Store Readiness
-
-CloudNest keeps user-facing copy in `src/i18n/` so language support is present from day 0. New UI, status, log, and error text should use message IDs rather than hardcoded English in Rust or JavaScript.
-
-For signing, privacy, localization, and review requirements, see `docs/APP_STORE_READINESS.md`.
+- Opens Chrome for Apple-managed iCloud sign-in — your credentials stay inside Apple's login page.
+- Scans your recently deleted iCloud Drive items in batches.
+- Restores everything back to where it was, with retry and resume if the connection drops.
+- Keeps session credentials in memory only. Nothing is written to disk.
 
 ## Privacy
 
-Your Apple ID password and two-factor code stay inside Apple's iCloud sign-in page. Session credentials are kept in memory only and are not written to disk.
+Your Apple ID password and two-factor code are entered inside Apple's own iCloud sign-in page. Session cookies are held in memory during recovery and never persisted. There is no server, no telemetry, no analytics.
+
+## Build from Source
+
+Prefer not to run a downloaded binary? Build it yourself:
+
+```bash
+npm install
+npm run tauri -- build
+```
+
+Find the DMG under `src-tauri/target/release/bundle/dmg/`.
+
+Requires: Node.js, Rust, and Xcode Command Line Tools.
+
+## License
+
+The app is free to download and use. The source code is not licensed for reuse or redistribution.
