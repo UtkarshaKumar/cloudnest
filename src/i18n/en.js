@@ -17,7 +17,7 @@ export const en = {
   "welcome.start": "Start Recovery",
 
   "signIn.eyebrow": "Step 2",
-  "signIn.title": "Sign in with Apple",
+  "signIn.title": "Sign in to iCloud",
   "signIn.lede": "A Chrome window will open for iCloud. Apple handles your password, Keychain, and two-factor code. This app only watches for the restore session needed to continue.",
   "signIn.open": "Open iCloud Sign In",
   "signIn.waiting": "Waiting for Sign In",

@@ -2,7 +2,9 @@
 
 Recover accidentally deleted iCloud Drive files and folders in bulk — something Apple's own recovery tool fails at nearly every time. Restores items back to their original folder structure.
 
-![CloudNest welcome screen](docs/assets/cloudnest-welcome.png)
+**Current release: v0.1.6** (macOS 14+)
+
+![CloudNest welcome screen — v0.1.6](docs/assets/cloudnest-welcome.png)
 
 ## Why I built it
 
